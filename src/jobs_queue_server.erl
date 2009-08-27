@@ -8,7 +8,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_link/0, submit_job/4, lookup_job/1, dequeue_job_with_identifier/1]).
--export([init/1]).
+-export([init/1, handle_call/3]).
 
 
 %% Public API

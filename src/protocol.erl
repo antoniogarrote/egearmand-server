@@ -4,7 +4,8 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--export([parse_command/2, process_request/2]) .
+%-export([parse_command/2, process_request/2, parse_command/1]) .
+-compile(export_all).
 
 %% @doc
 %% @author 'Samuel Stauffer <samuel@lefora.com>'

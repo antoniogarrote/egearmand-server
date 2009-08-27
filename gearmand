@@ -1,0 +1,2 @@
+#!/bin/bash
+erl -pa ebin -s gearmand cmd_start localhost, 4730

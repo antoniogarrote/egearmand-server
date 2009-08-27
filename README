@@ -6,8 +6,3 @@ $rake
 
 $erl -pa ebin
 >gearmand:start("localhost",4730) .
-
-
-=== failing?
-
-try compiling from erlang shell

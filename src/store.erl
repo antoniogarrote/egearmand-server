@@ -4,7 +4,7 @@
 
 -include_lib("eunit/include/eunit.hrl") .
 
--export([insert/3, next/2, delete/3, all/2, delete_if/2]) .
+-export([insert/3, next/2, delete/3, all/2, delete_if/2, dequeue_if/2]) .
 
 %% @doc
 %% Inserts a new value in one of the queues identified by Key.

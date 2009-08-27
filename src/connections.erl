@@ -7,8 +7,8 @@
 -include_lib("states.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/1, start_link/2, close_connection/0, check_worker_proxy_for/2, do_recv/2, do_recv/1]).
--export([init/1]).
+-export([start_link/1, start_link/2, close_connection/0, check_worker_proxy_for/2, do_recv/2, do_recv/1, server_socket_process/2, process_connection/1]).
+-export([init/1, handle_call/3]).
 
 %% Public API
 

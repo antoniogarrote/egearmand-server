@@ -7,7 +7,7 @@
 -include_lib("states.hrl") .
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/2, gearman_message/3, cast_gearman_message/3]).
+-export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
 
 %% Public API
