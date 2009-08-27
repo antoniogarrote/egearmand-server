@@ -1,0 +1,8 @@
+=== compile
+
+$rake
+
+== running
+
+$erl -pa ebin
+>gearmand:start("localhost",4730) .
