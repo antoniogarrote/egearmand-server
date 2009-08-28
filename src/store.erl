@@ -4,7 +4,7 @@
 
 -include_lib("eunit/include/eunit.hrl") .
 
--export([insert/3, next/2, delete/3, all/2, delete_if/2, dequeue_if/2, alter/2, detect_if/2]) .
+-export([insert/3, next/2, dequeue/2, delete/3, all/2, delete_if/2, dequeue_if/2, alter/2, detect_if/2]) .
 
 %% @doc
 %% Inserts a new value in one of the queues identified by Key.
@@ -28,6 +28,19 @@ next(Key,Queues) ->
                 (F,K,[{_K,_Vs} = H | R], A) -> F(F,K,R,[H|A])
              end ,
     DoNext(DoNext,Key,Queues,[]) .
+
+
+%% @doc
+%% retrieves the next element in the circular queue and deletes it from the queue
+-spec(dequeue(atom(), [{atom(),[any()]}]) -> {atom(), [{atom(),[any()]}]}) .
+
+dequeue(Key,Queues) ->
+    DoDequeue = fun(_F,_K,[],A)               -> {not_found, A};
+                   (_F,K,[{K,[VH|VR]} | R], A) -> {VH, [{K, VR} | R] ++ A} ; %% we found the queue
+                   (F,K,[{_K,_Vs} = H | R], A) -> F(F,K,R,[H|A])
+                end ,
+    DoDequeue(DoDequeue,Key,Queues,[]) .
+
 
 %% @doc
 %% retrieves all the elements for a key
@@ -173,6 +186,18 @@ next_test() ->
     {ElemC,QueueF} = next(test,QueueE),
     ?assertEqual(1,ElemC),
     ?assertEqual(2,length(QueueF)) .
+
+dequeue_test() ->
+    QueueA = insert(test,1,[]),
+    QueueB = insert(test,2,QueueA),
+    QueueC = insert(test_2,3,QueueB),
+    {ElemA,QueueD} = log:t(dequeue(test,QueueC)),
+    ?assertEqual(1,ElemA),
+    {ElemB,QueueE} = dequeue(test,QueueD),
+    ?assertEqual(2,ElemB),
+    {ElemC,QueueF} = dequeue(test,QueueE),
+    ?assertEqual(not_found,ElemC),
+    ?assertEqual(QueueF,[{test_2,[3]},{test,[]}]).
 
 deletion_test() ->
     Queue = insert(test,1,[]),

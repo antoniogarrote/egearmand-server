@@ -7,7 +7,7 @@
 -include_lib("states.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/0, submit_job/4, lookup_job/1, dequeue_job_with_identifier/1, lookup_job_with_identifier/1]).
+-export([start_link/0, submit_job/4, lookup_job/1]).
 -export([init/1, handle_call/3]).
 
 
@@ -34,44 +34,12 @@ lookup_job(FunctionName) ->
     gen_server:call(jobs_queue_server, {lookup_job, FunctionName}) .
 
 
-dequeue_job_with_identifier(Identifier) ->
-    gen_server:call(jobs_queue_server, {dequeue, Identifier}) .
-
-
-lookup_job_with_identifier(Identifier) ->
-    gen_server:call(jobs_queue_server, {lookup_identifier, Identifier}) .
-
-
-update_job_status(Identifier, Numerator, Denominator) ->
-    gen_server:call(jobs_queue_server, {update_job_status, Identifier, Numerator, Denominator}) .
-
-
 %% Callbacks
 
 
 init(State) ->
     {ok, State}.
 
-handle_call({update_job_status, Identifier, Numerator, Denominator}, _From, State) ->
-    {Result,StateP} = store:alter(fun(#job_request{ identifier = I } = JobRequest) ->
-                                          if
-                                              I =:= Identifier -> JobRequest#job_request{ status = {Numerator, Denominator} } ;
-                                              true             -> JobRequest
-                                          end
-                                  end, State),
-    {reply, Result, StateP} ;
-
-handle_call({lookup_identifier, Identifier}, _From, State) ->
-    case store:detect_if(fun(JobRequest) -> JobRequest#job_request.identifier =:= Identifier end, State) of
-        not_found  ->  {reply, {error, not_found}, State} ;
-        Job        ->  {reply, {ok, Job}, State}
-    end ;
-
-handle_call({dequeue, Identifier}, _From, State) ->
-    case store:dequeue_if(fun(JobRequest) -> JobRequest#job_request.identifier =:= Identifier end, State) of
-        {not_found, StateP}  ->  {reply, {error, not_found}, StateP} ;
-        {Job, StateP}        ->  {reply, {ok, Job}, StateP}
-    end ;
 
 handle_call({submit_job, JobRequest, Level}, _From, State) ->
     {reply, {ok, JobRequest#job_request.identifier}, store:insert({JobRequest#job_request.function, Level}, JobRequest, State)} ;
@@ -79,8 +47,8 @@ handle_call({submit_job, JobRequest, Level}, _From, State) ->
 handle_call({lookup_job, FunctionName}, _From, State) ->
     Found = do_lookup_job(FunctionName, State, [high, normal, low]),
     case Found of
-        {Result, StateP} -> {reply, {ok, Result}, StateP} ;
-        not_found        -> {reply, not_found, State}
+        {not_found, StateP} -> {reply, {ok, not_found}, StateP} ;
+        {Result, StateP}    -> {reply, {ok, Result}, StateP}
     end .
 
 
@@ -92,9 +60,9 @@ do_lookup_job(_FunctionName, Queues, []) ->
 
 do_lookup_job(FunctionName, Queues, [Level | Levels]) ->
     log:t(["Lookup job for", {FunctionName, Level}, "in", Queues]),
-    Result = store:next({FunctionName, Level}, Queues),
+    Result = store:dequeue({FunctionName, Level}, Queues),
     case Result of
-        not_found ->
+        {not_found, _QueueP} ->
             do_lookup_job(FunctionName, Queues, Levels) ;
         _Else ->
             Result

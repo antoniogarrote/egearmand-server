@@ -61,52 +61,35 @@ handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, 
         #job_request{identifier = Identifier, function = FunctionName, opaque_data = Opaque} ->
             Request = protocol:pack_response(job_assign, {Identifier, FunctionName, Opaque}),
             gen_tcp:send(WorkerSocket,Request),
-            {reply, ok, State}
+            {reply, ok, State#worker_proxy_state{current = Job}}
     end ;
 
-handle_call({work_status, [JobIdentifier, Numerator,Denominator]}, _From, State) ->
-    UpdatedJob = jobs_queue_server:update_job_status(JobIdentifier, Numerator, Denominator),
-    case UpdatedJob of
-        not_found  ->
-            {reply, error, State} ;
+handle_call({work_status, [JobIdentifier, Numerator,Denominator]}, _From, #worker_proxy_state{ current = Job } = State) ->
+    UpdatedJob = Job#job_request{ status = { Numerator, Denominator } },
+    if UpdatedJob#job_request.socket =/= no_socket ->
+            Response = protocol:pack_response(work_status, {JobIdentifier, Numerator, Denominator}),
+            gen_tcp:send(UpdatedJob#job_request.socket,Response)
+    end,
+    {reply, ok, State#worker_proxy_state{ current = UpdatedJob } } ;
 
-        #job_request{ socket=ClientSocket, status={Numerator, Denominator} } ->
-            if ClientSocket =/= no_socket ->
-                    Response = protocol:pack_response(work_status, {JobIdentifier, Numerator, Denominator}),
-                    gen_tcp:send(ClientSocket,Response)
-            end,
-            {reply, ok, State}
-    end ;
+handle_call({work_data, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_state{ current = Job } = State) ->
+    if
+        Job#job_request.socket =/= no_socket ->
+            Response = protocol:pack_response(work_data, {JobIdentifier, OpaqueData}),
+            gen_tcp:send(Job#job_request.socket, Response) ;
+        true -> dont_care
+    end,
+    {reply, ok, State} ;
 
-handle_call({work_data, [JobIdentifier, OpaqueData]}, _From, State) ->
-    case jobs_queue_server:lookup_job_with_identifier(JobIdentifier) of
-        {error, not_found}                       ->
-            {reply, error, State} ;
+handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state{ current = Job } = State) ->
+    if
+        Job#job_request.socket =/= no_socket ->
+            Response = protocol:pack_response(work_complete, {JobIdentifier, Result}),
+            gen_tcp:send(Job#job_request.socket,Response) ;
 
-        {ok, #job_request{ socket=ClientSocket }} ->
-            if
-                ClientSocket =/= no_socket ->
-                    Response = protocol:pack_response(work_data, {JobIdentifier, OpaqueData}),
-                    gen_tcp:send(ClientSocket,Response) ;
-                true -> dont_care
-            end,
-            {reply, ok, State}
-    end ;
-
-handle_call({work_complete, [JobIdentifier, Result]}, _From, State) ->
-    case jobs_queue_server:dequeue_job_with_identifier(JobIdentifier) of
-        {error, not_found}                       ->
-            {reply, error, State} ;
-
-        {ok, #job_request{ socket=ClientSocket }} ->
-            if
-                ClientSocket =/= no_socket ->
-                    Response = protocol:pack_response(work_complete, {JobIdentifier, Result}),
-                    gen_tcp:send(ClientSocket,Response) ;
-                true -> dont_care
-            end,
-            {reply, ok, State}
-    end .
+        true -> dont_care
+    end,
+    {reply, ok, State#worker_proxy_state{ current = none}} .
 
 
 handle_cast({noop, []}, #worker_proxy_state{ socket = WorkerSocket } = State) ->
