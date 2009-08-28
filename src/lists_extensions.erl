@@ -7,7 +7,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--export([compact/1, unique/1, splice/2, eachWithIndex/2, eachWithIndexP/2, interleave/1, mapWithIndex/2, detect/2]).
+-export([compact/1, unique/1, splice/2, eachWithIndex/2, eachWithIndexP/2, interleave/1, mapWithIndex/2, detect/2, update_and_detect/2]).
 
 
 compact(List) ->
@@ -85,11 +85,31 @@ detect(P, [H | R]) ->
         false -> detect(P,R)
     end .
 
+%% @doc
+%% traverses a list applying a predicate, updates the value of the element 
+%% in the list where the application result is {true, NewValue} and returns 
+%% the modified list and the updated element.
+update_and_detect(P, L) ->
+    update_and_detect(P, L, {not_found, []}) .
+
+update_and_detect(_P, [], Acum) -> Acum ;
+update_and_detect(P, [H | R], {not_found, Acum} ) ->
+    case (P(H)) of
+       {true,  Hp} -> {Hp , lists:reverse(Acum) ++ [Hp | R]} ;
+       {false, Hp} -> update_and_detect(P, R, {not_found, [Hp | Acum]})
+    end .
+
 
 %% tests
+
+update_and_detect_test() ->
+    ?assertEqual({here, [1,here,3,4]},
+                 update_and_detect(fun(X) -> if X =:= 2 -> {true, here} ;
+                                                X =/= 2 -> {false, X}
+                                             end
+                                   end, [1,2,3,4])) .
 
 
 detect_test() ->
     ?assertEqual({ok, 2}, detect(fun(X) -> X =:= 2 end, [1,2,3,4])),
     ?assertEqual({error, not_found}, detect(fun(X) -> X =:= 8 end, [1,2,3,4])) .
-

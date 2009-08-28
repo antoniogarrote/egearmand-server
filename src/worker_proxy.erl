@@ -64,12 +64,33 @@ handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, 
             {reply, ok, State}
     end ;
 
+handle_call({work_status, [JobIdentifier, Numerator,Denominator]}, _From, State) ->
+    UpdatedJob = jobs_queue_server:update_job_status(JobIdentifier, Numerator, Denominator),
+    case UpdatedJob of
+        not_found  ->
+            {reply, error, State} ;
+
+        #job_request{ socket=ClientSocket, status={Numerator, Denominator} } ->
+            if ClientSocket =/= no_socket ->
+                    Response = protocol:pack_response(work_status, {JobIdentifier, Numerator, Denominator}),
+                    gen_tcp:send(ClientSocket,Response)
+            end,
+            {reply, ok, State}
+    end ;
+
 handle_call({work_complete, [JobIdentifier, Result]}, _From, State) ->
     case jobs_queue_server:dequeue_job_with_identifier(JobIdentifier) of
-        {error, not_found}                       -> {reply, error, State} ;
-        {ok, #job_request{ socket=ClientSocket}} -> Response = protocol:pack_response(work_complete, {JobIdentifier, Result}),
-                                                    gen_tcp:send(ClientSocket,Response),
-                                                    {reply, ok, State}
+        {error, not_found}                       ->
+            {reply, error, State} ;
+
+        {ok, #job_request{ socket=ClientSocket }} ->
+            if
+                ClientSocket =/= no_socket ->
+                    Response = protocol:pack_response(work_complete, {JobIdentifier, Result}),
+                    gen_tcp:send(ClientSocket,Response) ;
+                true -> dont_care
+            end,
+            {reply, ok, State}
     end .
 
 
@@ -129,6 +150,9 @@ worker_process_connection(ProxyIdentifier, ClientSocket) ->
                                               {work_complete, [JobIdentifier, Response]} ->
                                                   %log:t([" worker proxy LLega can_do",FunctionName]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_complete, [JobIdentifier, Response]);
+
+                                              {work_status, [JobIdentifier, Numerator, Denominator]} ->
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_status, [JobIdentifier, Numerator, Denominator]) ;
 
                                               Other ->
                                                   log:t(["worker proxy LLega unknown",Other])

@@ -18,13 +18,16 @@ start_link() ->
     gen_server:start_link({local, jobs_queue_server}, jobs_queue_server, [], []) .
 
 submit_job(FunctionName, [UniqueId, OpaqueData], ClientSocket, Level) ->
-    {ok, {Address,Port}} = inet:peername(ClientSocket),
-    Identifier = lists:flatten(io_lib:format("job@~p:~p(~p)",[Address,Port,make_ref()])),
+    Identifier = case ClientSocket of % detached or actual socket?
+                     no_socket -> lists:flatten(io_lib:format("job@~p:(~p)",[detached,make_ref()])) ;
+                     _Other    -> {ok, {Address,Port}} = inet:peername(ClientSocket),
+                                  lists:flatten(io_lib:format("job@~p:~p(~p)",[Address,Port,make_ref()]))
+                 end,
     JobRequest = #job_request{ identifier = Identifier,
                                function = FunctionName,
                                unique_id = UniqueId,
                                opaque_data = OpaqueData,
-                               socket = ClientSocket },
+                               socket = ClientSocket }, % this can be no_socket if the job is detached
     gen_server:call(jobs_queue_server, {submit_job, JobRequest, Level}) .
 
 lookup_job(FunctionName) ->
@@ -35,12 +38,24 @@ dequeue_job_with_identifier(Identifier) ->
     gen_server:call(jobs_queue_server, {dequeue, Identifier}) .
 
 
+update_job_status(Identifier, Numerator, Denominator) ->
+    gen_server:call(jobs_queue_server, {update_job_status, Identifier, Numerator, Denominator}) .
+
+
 %% Callbacks
 
 
 init(State) ->
     {ok, State}.
 
+handle_call({update_job_status, Identifier, Numerator, Denominator}, _From, State) ->
+    {Result,StateP} = store:alter(fun(#job_request{ identifier = I } = JobRequest) ->
+                                          if
+                                              I =:= Identifier -> JobRequest#job_request{ status = {Numerator, Denominator} } ;
+                                              true             -> JobRequest
+                                          end
+                                  end, State),
+    {reply, Result, StateP} ;
 
 handle_call({dequeue, Identifier}, _From, State) ->
     case store:dequeue_if(fun(JobRequest) -> JobRequest#job_request.identifier =:= Identifier end, State) of

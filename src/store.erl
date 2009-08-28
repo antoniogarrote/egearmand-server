@@ -4,7 +4,7 @@
 
 -include_lib("eunit/include/eunit.hrl") .
 
--export([insert/3, next/2, delete/3, all/2, delete_if/2, dequeue_if/2]) .
+-export([insert/3, next/2, delete/3, all/2, delete_if/2, dequeue_if/2, alter/2]) .
 
 %% @doc
 %% Inserts a new value in one of the queues identified by Key.
@@ -84,6 +84,25 @@ dequeue_if(P, Queues) ->
 
 
 %% @doc
+%% applies predicate P to values of the queues.
+%% The predicate P must returns {false, Vp} with the new value of V if
+%% the execution must go on in the list or {true, Vp} with the new
+%% value Vp for V if the execution must stop and Vp to be returned
+%% altogether with the updated list.
+-spec(alter(any(), [{atom(),[any()]}]) -> {any(), [{atom(),[any()]}]}).
+
+alter(P, Queues) ->
+     DoAlter = fun(_F,[],A) -> A ;
+                 (F,[{K,Vs}|Cdr],{not_found,A}) ->
+                       case lists_extensions:update_and_detect(P,Vs) of
+                          {not_found, _Vsp} -> F(F,Cdr,{not_found, [{K,Vs},A]}) ;
+                          {Vp, Vsp}         -> {Vp, lists:reverse(A) ++ [{K, Vsp} | Cdr]}
+                      end
+              end,
+    DoAlter(DoAlter,Queues,{not_found,[]}) .
+
+
+%% @doc
 %% Deletes Value from all the Queues.
 -spec(delete_from_all(atom(), [{atom(),[any()]}]) -> [{atom(),[any()]}]).
 
@@ -93,6 +112,22 @@ delete_from_all(Value,Queues) ->
 
 %% tests
 
+
+alter_test() ->
+    Queue = insert(test,1,[]),
+    ?assertEqual(1,length(Queue)),
+    QueueB = insert(test,2,Queue),
+    {Result,QueueC} = alter(fun(E) ->
+                                    if
+                                        E =:= 1 -> {true, E + 1} ;
+                                        true    -> {false, E}
+                                    end
+                            end, QueueB),
+    ?assertEqual(2,Result),
+    ?assertEqual(1,length(QueueC)),
+    {_K,Vs} = lists:nth(1,QueueC),
+    ?assertEqual(2,length(Vs)) ,
+    ?assertEqual([2,2], Vs) .
 
 insertion_test() ->
     Queue = insert(test,1,[]),

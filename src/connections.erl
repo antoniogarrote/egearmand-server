@@ -129,6 +129,15 @@ process_connection(ClientSocket) ->
                               {submit_job_low, [FunctionName | Arguments]} ->
                                   process_job(low, FunctionName, Arguments, ClientSocket) ;
 
+                              {submit_job_bg, [FunctionName | Arguments]} ->
+                                  process_job_bg(normal, FunctionName, Arguments, ClientSocket) ;
+
+                              {submit_job_high_bg, [FunctionName | Arguments]} ->
+                                  process_job_bg(high, FunctionName, Arguments, ClientSocket) ;
+
+                              {submit_job_low_bg, [FunctionName | Arguments]} ->
+                                  process_job_bg(low, FunctionName, Arguments, ClientSocket) ;
+
                               Other ->
                                   log:t(["LLega unknown",Other])
                           end
@@ -138,6 +147,21 @@ process_connection(ClientSocket) ->
 
 %% private functions
 
+
+%% doc
+%% Common logic for dispatching background jobs of different priority level
+process_job_bg(Level, FunctionName, Arguments, ClientSocket) ->
+    log:t(["LLega submit_job_bg", Level, FunctionName, Arguments]),
+    {ok, Handle} = jobs_queue_server:submit_job(FunctionName, Arguments, no_socket, Level),
+    Response = protocol:pack_response(job_created, {Handle}),
+    log:t(["Sending job_created",Response]),
+    gen_tcp:send(ClientSocket, Response),
+    WorkerProxies = functions_registry:workers_for_function(FunctionName),
+    log:t(["Found Server for Function:", length(WorkerProxies)]),
+    lists:foreach(fun(WorkerProxy) ->
+                          spawn(fun() -> worker_proxy:cast_gearman_message(WorkerProxy, noop, []) end)
+                  end,
+                  WorkerProxies)  .
 
 %% doc
 %% Common logic for dispatching jobs of different priority level

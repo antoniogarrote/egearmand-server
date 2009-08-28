@@ -11,4 +11,5 @@
                        function :: binary(),
                        unique_id :: binary(),
                        opaque_data :: binary(),
+                       status = {0,0} :: {integer(), integer()},
                        socket :: gen_tcp:socket() }) .
