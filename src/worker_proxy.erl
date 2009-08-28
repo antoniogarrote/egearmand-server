@@ -81,6 +81,15 @@ handle_call({work_data, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_state
     end,
     {reply, ok, State} ;
 
+handle_call({work_fail, [JobIdentifier]}, _From, #worker_proxy_state{ current = Job } = State) ->
+    if
+        Job#job_request.socket =/= no_socket ->
+            Response = protocol:pack_response(work_fail, {JobIdentifier}),
+            gen_tcp:send(Job#job_request.socket, Response) ;
+        true -> dont_care
+    end,
+    {reply, ok, State#worker_proxy_state{ current = none }} ;
+
 handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state{ current = Job } = State) ->
     if
         Job#job_request.socket =/= no_socket ->
@@ -155,6 +164,10 @@ worker_process_connection(ProxyIdentifier, ClientSocket) ->
 
                                               {work_status, [JobIdentifier, Numerator, Denominator]} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_status, [JobIdentifier, Numerator, Denominator]) ;
+
+                                              {work_fail, [JobIdentifier]} ->
+                                                  %log:t([" worker proxy LLega can_do",FunctionName]),
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_fail, [JobIdentifier]);
 
                                               Other ->
                                                   log:t(["worker proxy LLega unknown",Other])
