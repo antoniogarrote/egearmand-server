@@ -4,7 +4,7 @@
 
 -include_lib("eunit/include/eunit.hrl") .
 
--export([insert/3, next/2, delete/3, all/2, delete_if/2, dequeue_if/2, alter/2]) .
+-export([insert/3, next/2, delete/3, all/2, delete_if/2, dequeue_if/2, alter/2, detect_if/2]) .
 
 %% @doc
 %% Inserts a new value in one of the queues identified by Key.
@@ -84,6 +84,23 @@ dequeue_if(P, Queues) ->
 
 
 %% @doc
+%% Returns one value from all the queues if the
+%% given predicate P returns true.
+detect_if(P, Queues) ->
+    DoDetect = fun(_F, []) ->
+                        not_found ;
+
+                   (F, [{_K,Vs} | R])   ->
+                        case lists_extensions:detect(P,Vs) of
+                            {ok, Vp}          ->  Vp ;
+                            {error,not_found} -> F(F, R)
+                        end
+
+                end ,
+    DoDetect(DoDetect, Queues) .
+
+
+%% @doc
 %% applies predicate P to values of the queues.
 %% The predicate P must returns {false, Vp} with the new value of V if
 %% the execution must go on in the list or {true, Vp} with the new
@@ -112,6 +129,14 @@ delete_from_all(Value,Queues) ->
 
 %% tests
 
+detect_if_test() ->
+    Queue = insert(test,1,[]),
+    ?assertEqual(1,length(Queue)),
+    QueueB = insert(test,2,Queue),
+    Result= detect_if(fun(E) -> E =:= 1 end, QueueB),
+    ?assertEqual(1, Result),
+    ResultB= detect_if(fun(E) -> E =:= 3 end, QueueB),
+    ?assertEqual(not_found, ResultB) .
 
 alter_test() ->
     Queue = insert(test,1,[]),

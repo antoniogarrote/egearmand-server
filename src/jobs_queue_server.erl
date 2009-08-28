@@ -7,7 +7,7 @@
 -include_lib("states.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/0, submit_job/4, lookup_job/1, dequeue_job_with_identifier/1]).
+-export([start_link/0, submit_job/4, lookup_job/1, dequeue_job_with_identifier/1, lookup_job_with_identifier/1]).
 -export([init/1, handle_call/3]).
 
 
@@ -38,6 +38,10 @@ dequeue_job_with_identifier(Identifier) ->
     gen_server:call(jobs_queue_server, {dequeue, Identifier}) .
 
 
+lookup_job_with_identifier(Identifier) ->
+    gen_server:call(jobs_queue_server, {lookup_identifier, Identifier}) .
+
+
 update_job_status(Identifier, Numerator, Denominator) ->
     gen_server:call(jobs_queue_server, {update_job_status, Identifier, Numerator, Denominator}) .
 
@@ -56,6 +60,12 @@ handle_call({update_job_status, Identifier, Numerator, Denominator}, _From, Stat
                                           end
                                   end, State),
     {reply, Result, StateP} ;
+
+handle_call({lookup_identifier, Identifier}, _From, State) ->
+    case store:detect_if(fun(JobRequest) -> JobRequest#job_request.identifier =:= Identifier end, State) of
+        not_found  ->  {reply, {error, not_found}, State} ;
+        Job        ->  {reply, {ok, Job}, State}
+    end ;
 
 handle_call({dequeue, Identifier}, _From, State) ->
     case store:dequeue_if(fun(JobRequest) -> JobRequest#job_request.identifier =:= Identifier end, State) of
