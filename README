@@ -1,3 +1,24 @@
+=== introduction
+
+An experimental Gearmand distributed server written in Erlang with all the things Gearman should not have: replicated persistent queues,
+incipient error recovery and support for clustering.
+
+=== dependencies
+
+Erlang (tested with OTP R13B01),
+Ruby and Rake for compiling
+
+=== tests
+
+Few and scattered throug the source files.
+
+=== configuration
+
+By now in file src/configuration.erl. Take a look at the comments.
+Must be edited before compiling.
+If you want to use persistent queues, you must create the replicated Mnesia schema before calling to gearmand:start(). 
+You can use mensia_store:create_tables(), after initiating calling to mensia:create_schema(configuration:gearmand_nodes()).
+
 === compile
 
 $rake

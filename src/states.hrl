@@ -5,12 +5,18 @@
 
 -record(job_request, { identifier :: string(),
                        function :: binary(),
+                       queue_key :: { binary(), atom() },
                        unique_id :: binary(),
                        opaque_data :: binary(),
+                       level :: low | normal | high,
                        status = {0,0} :: {integer(), integer()},
-                       socket :: gen_tcp:socket() }) .
+                       client_socket_id :: atom() }) .
 
 -record(worker_proxy_state,{ identifier :: binary(),
                              functions = [] :: [binary()],
                              socket :: gen_tcp:socket(),
                              current = none :: #job_request{} | none }) .
+
+-record(function_register, { table_key :: {atom(), atom()},
+                             reference :: atom(),
+                             function_name :: binary() }) .

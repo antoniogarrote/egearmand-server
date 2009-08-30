@@ -16,11 +16,14 @@
 start_link(Configuration) ->
     gen_server:start_link({local, connections}, connections, #connections_state{ configuration = Configuration}, []) .
 
+
 start_link(Host, Port) ->
     gen_server:start_link({local, connections}, connections, #connections_state{ configuration = [{host, Host},{port, Port}]}, []) .
 
+
 close_connection() ->
     gen_server:call(connections,close_connection) .
+
 
 check_worker_proxy_for(Ref,Socket) ->
     %log:t([6,inet:peername(Socket)]),
@@ -51,7 +54,7 @@ handle_call({check_worker_proxy, Ref, Socket}, _From, #connections_state{ worker
         true ->
             {reply, Ref, State} ;
         false ->
-            %log:t(["pre linking", Ref, Socket]) ,
+            log:t(["pre linking", Ref, Socket]) ,
             worker_proxy:start_link(Ref, Socket),
             {reply, Ref, State#connections_state{ worker_proxies = [Ref | Ws] }}
     end .
@@ -85,7 +88,7 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
 
 process_connection(ClientSocket) ->
     {ok, {Adress,Port}} = inet:peername(ClientSocket),
-    NewIdentifier = list_to_atom(lists:flatten(io_lib:format("worker@~p:~p",[Adress,Port]))),
+    NewIdentifier = list_to_atom(lists:flatten(io_lib:format("worker@~p:~p:~p",[node(),Adress,Port]))),
     %log:t([1,inet:peername(ClientSocket)]),
     %{ok, Bin} = do_recv(ClientSocket, []),
     {ok, Bin} = do_recv(ClientSocket),

@@ -37,11 +37,16 @@ init(State) ->
     {ok, State} .
 
 
-handle_call({register, Ref, FunctionName}, _From, Store) ->
-    {reply, ok, store:insert(FunctionName, Ref, Store)} ;
+handle_call({register, Ref, FunctionName}, _From, _Store) ->
+    {reply, ok, mnesia_store:insert(#function_register{ function_name = FunctionName, table_key = {FunctionName, Ref}, reference = Ref },
+                             function_register)} ;
 
-handle_call({unregister, Ref, FunctionName}, _From, Store) ->
-    {reply, ok, store:delete(FunctionName, Ref, Store)} ;
+handle_call({unregister, Ref, FunctionName}, _From, _Store) ->
+    {reply, ok, mnesia_store:delete({FunctionName, Ref}, function_register)} ;
 
-handle_call({workers_for, FunctionName}, _From, Store) ->
-    {reply, store:all(FunctionName, Store), Store} .
+handle_call({workers_for, FunctionName}, _From, _Store) ->
+    log:t(1),
+    Registers = mnesia_store:all(fun(X) -> X#function_register.function_name == FunctionName end, function_register),
+    log:t(Registers),
+    Workers = lists:map(fun(FR) -> FR#function_register.reference end, Registers),
+    {reply, Workers, function_register} .
