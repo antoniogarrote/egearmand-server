@@ -31,6 +31,9 @@ create_queue(Options) ->
 publish(Content, Queue, RoutingKey) ->
     gen_server:call(rabbit_backend, {publish, Content, Queue, RoutingKey}) .
 
+consume(F,Queue) ->
+    gen_server:call(rabbit_backend, {consume, F, Queue}) .
+
 
 %% callbacks
 
@@ -60,13 +63,26 @@ handle_call({create, Options}, _From, State) ->
 handle_call({publish, Content, Queue, BindingKey}, _From, State) ->
     AlreadyDeclared = proplists:is_defined(Queue,State#rabbit_queue_state.queues),
     if AlreadyDeclared =:= false ->
-            try declare_queue([{queue, Queue}], State) of
+            try declare_queue([{queue, Queue, {bindkey, Queue}}], State) of
                 Queue     -> publish_content(Content, Queue, BindingKey, State),
                              { reply, ok, State#rabbit_queue_state{ queues = [ Queue | State#rabbit_queue_state.queues ] } }
             catch
                 _Exception -> { reply, error, State }
             end ;
        true -> publish_content(Content, Queue, BindingKey, State),
+               {reply, ok, State}
+    end ;
+
+handle_call({consume, Function, Queue}, _From, State) ->
+    AlreadyDeclared = proplists:is_defined(Queue,State#rabbit_queue_state.queues),
+    if AlreadyDeclared =:= false ->
+            try declare_queue([{queue, Queue}, {bindkey, Queue}], State) of
+                Queue     -> register_consumer(Function, Queue, State),
+                             { reply, ok, State#rabbit_queue_state{ queues = [ Queue | State#rabbit_queue_state.queues ] } }
+            catch
+                _Exception -> { reply, error, State }
+            end ;
+       true -> register_consumer(Function, Queue, State),
                {reply, ok, State}
     end .
 
@@ -174,3 +190,52 @@ publish_content(Content, Queue, BindingKey, State) ->
                         payload_fragments_rev = [Content]
                        },
     amqp_channel:cast(State#rabbit_queue_state.channel, BasicPublish, ContentP).
+
+
+register_consumer(Function, Queue, State) ->
+    BasicConsume = #'basic.consume'{ticket = State#rabbit_queue_state.ticket,
+                                    queue = Queue,
+                                    consumer_tag = <<"">>,
+                                    no_local = false,
+                                    no_ack = true,
+                                    exclusive = false,
+                                    nowait = false},
+
+    ConsumerPid = spawn_consumer(Function, State#rabbit_queue_state.channel),
+    #'basic.consume_ok'{} = amqp_channel:call(State#rabbit_queue_state.channel, BasicConsume, ConsumerPid),
+    ConsumerPid .
+
+
+spawn_consumer(_Function, Channel) ->
+    spawn(fun() ->
+                  %% If the registration was sucessful, the consumer will
+                  %% be notified
+
+                  receive
+                      #'basic.consume_ok'{consumer_tag = ConsumerTag} ->  ok
+                  end,
+
+                  ConsumeLoop = fun(F) ->
+                                        %% When a message is routed to the queue, it will be
+                                        %% delivered to this consumer
+
+                                        receive
+                                            {#'basic.deliver'{delivery_tag = _DeliveryTag}, Content} ->
+
+                                                #content{payload_fragments_rev = [Payload]} = Content,
+                                                %% TODO pass the value read to the Function passed as a parameter
+                                                io:format("Message received: ~p~n", [Payload]),
+                                                F(F) ;
+                                            exit ->
+
+                                                %% After the consumer is finished interacting with the
+                                                %% queue, it can deregister itself
+
+                                                BasicCancel = #'basic.cancel'{consumer_tag = ConsumerTag,
+                                                                              nowait = false},
+                                                #'basic.cancel_ok'{consumer_tag = ConsumerTag}
+                                                    = amqp_channel:call(Channel,BasicCancel)
+                                        end
+                                end,
+                  ConsumeLoop(ConsumeLoop)
+          end) .
