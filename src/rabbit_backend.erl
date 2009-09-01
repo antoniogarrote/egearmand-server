@@ -94,7 +94,7 @@ handle_call({consume, Function, Queue}, _From, State) ->
 channel_default_values() ->
     [ {realm, <<"gearman">>},
       {exclusive, false},
-      {passive, true},
+      {passive, false},
       {active, true},
       {write, true},
       {read, true} ] .
@@ -135,7 +135,7 @@ channel_setup(Connection) ->
 declare_queue(Options, State) ->
     Q = proplists:get_value(name, Options),
     X = <<"x">>,
-    BindKey = proplists:get_value(bind_key, Options),
+    BindKey = proplists:get_value(routing_key, Options),
     QueueDeclare = #'queue.declare'{ticket = State#rabbit_queue_state.ticket,
                                     queue = Q,
                                     passive = false,
@@ -198,13 +198,12 @@ register_consumer(Function, Queue, State) ->
 
     ConsumerPid = spawn_consumer(Function, State#rabbit_queue_state.channel),
 
-    %#'basic.consume_ok'{ consumer_tag = ConsumerTag } = amqp_channel:call(State#rabbit_queue_state.channel, {BasicConsume, self()}),
     amqp_channel:subscribe(State#rabbit_queue_state.channel, BasicConsume, ConsumerPid),
 
     ConsumerPid .
 
 
-spawn_consumer(_Function, Channel) ->
+spawn_consumer(Function, Channel) ->
     spawn(fun() ->
                   %% If the registration was sucessful, the consumer will
                   %% be notified
@@ -213,18 +212,19 @@ spawn_consumer(_Function, Channel) ->
                       #'basic.consume_ok'{consumer_tag = ConsumerTag} -> log:t(1),
                                                                          ok
                   end,
-                  log:t(3),
+                  log:t([3, ConsumerTag]),
                   ConsumeLoop = fun(F) ->
-                                        %% When a message is routed to the queue, it will be
-                                        %% delivered to this consumer
+
                                         log:t(["lets wait for messages"]),
                                         receive
                                             {#'basic.deliver'{delivery_tag = _DeliveryTag}, Content} ->
 
-                                                #content{payload_fragments_rev = [Payload]} = Content,
+                                                log:t("Got something"),
+                                                #amqp_msg{payload = DeliveredPayload} = Content,
                                                 %% TODO pass the value read to the Function passed as a parameter
-                                                io:format("Message received: ~p~n", [Payload]),
-                                                F(F) ;
+                                                Function([DeliveredPayload]),
+                                                F(F);
+
                                             exit ->
 
                                                 %% After the consumer is finished interacting with the
@@ -309,7 +309,7 @@ direct_queue_test() ->
                                 %% If the registration was sucessful, the consumer will
                                 %% be notified
                                 receive
-                                    #'basic.consume_ok'{consumer_tag = ConsumerTag} -> ok
+                                    #'basic.consume_ok'{consumer_tag = _ConsumerTag} -> ok
                                 end,
 
                                 ConsumeLoop = fun(F) ->
@@ -321,7 +321,7 @@ direct_queue_test() ->
 
                                                 log:t("Got something"),
                                                 log:t(["REC:", Content]),
-                                                #amqp_msg{payload = Payload} = Content,
+                                                #content{payload_fragments_rev = [Payload]} = Content,
                                                 %% TODO pass the value read to the Function passed as a parameter
                                                 io:format("Message received: ~p~n", [Payload]),
                                                 F(F)
