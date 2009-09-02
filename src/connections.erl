@@ -26,7 +26,6 @@ close_connection() ->
 
 
 check_worker_proxy_for(Ref,Socket) ->
-    %log:t([6,inet:peername(Socket)]),
     gen_server:call(connections,{check_worker_proxy, Ref, Socket}) .
 
 
