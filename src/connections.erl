@@ -87,68 +87,78 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
 -spec(process_connection(gen_tcp:socket()) -> undefined) .
 
 process_connection(ClientSocket) ->
-    {ok, {Adress,Port}} = inet:peername(ClientSocket),
-    NewIdentifier = list_to_atom(lists:flatten(io_lib:format("worker@~p:~p:~p",[node(),Adress,Port]))),
-    %log:t([1,inet:peername(ClientSocket)]),
-    %{ok, Bin} = do_recv(ClientSocket, []),
     {ok, Bin} = do_recv(ClientSocket),
     log:t(["Received from client",Bin]),
     % this thread will process the request and notify us with the message
     Msgs = protocol:process_request(Bin, []),
-    log:t(["MSGS EN QUEUE ",Msgs]),
+    log:t(["MSGS IN QUEUE ",Msgs]),
     lists:foreach(fun(Msg) ->
-
-                          case Msg of
-                              {set_client_id, []} ->
-                                  log:t(["LLega set_client_id",[]]),
-                                  log:t([2,inet:peername(ClientSocket)]),
-                                  check_worker_proxy_for(NewIdentifier, ClientSocket),
-                                  worker_proxy:gearman_message(NewIdentifier, set_client_id, none) ;
-
-                              {set_client_id, Identifier} ->
-                                  log:t(["LLega set_client_id",Identifier]),
-                                  log:t([3,inet:peername(ClientSocket)]),
-                                  check_worker_proxy_for(NewIdentifier, ClientSocket),
-                                  worker_proxy:gearman_message(NewIdentifier, set_client_id, Identifier) ;
-
-                              {can_do, FunctionName} ->
-                                  log:t(["LLega can_do",FunctionName]),
-                                  log:t([4,inet:peername(ClientSocket)]),
-                                  check_worker_proxy_for(NewIdentifier, ClientSocket),
-                                  worker_proxy:gearman_message(NewIdentifier, can_do, FunctionName) ;
-
-                              {grab_job, none} ->
-                                  log:t(["LLega grab_job"]),
-                                  log:t([5,inet:peername(ClientSocket)]),
-                                  check_worker_proxy_for(NewIdentifier, ClientSocket),
-                                  worker_proxy:gearman_message(NewIdentifier, grab_job, none) ;
-
-                              {submit_job, [FunctionName | Arguments]} ->
-                                  process_job(normal, FunctionName, Arguments, ClientSocket) ;
-
-                              {submit_job_high, [FunctionName | Arguments]} ->
-                                  process_job(high, FunctionName, Arguments, ClientSocket) ;
-
-                              {submit_job_low, [FunctionName | Arguments]} ->
-                                  process_job(low, FunctionName, Arguments, ClientSocket) ;
-
-                              {submit_job_bg, [FunctionName | Arguments]} ->
-                                  process_job_bg(normal, FunctionName, Arguments, ClientSocket) ;
-
-                              {submit_job_high_bg, [FunctionName | Arguments]} ->
-                                  process_job_bg(high, FunctionName, Arguments, ClientSocket) ;
-
-                              {submit_job_low_bg, [FunctionName | Arguments]} ->
-                                  process_job_bg(low, FunctionName, Arguments, ClientSocket) ;
-
-                              Other ->
-                                  log:t(["LLega unknown",Other])
+                          case check_extensions(Msg) of
+                              %% No extension registered, just follow common gearman flow
+                              false ->
+                                  process_connection(Msg, ClientSocket) ;
+                              %% There is an extension registered for this message.
+                              %% We pass the control to the extension
+                              Extension ->
+                                  apply_extension(Extension, Msg, ClientSocket)
                           end
                   end,
                   Msgs) .
 
 
 %% private functions
+
+
+process_connection(Msg, ClientSocket) ->
+    {ok, {Adress,Port}} = inet:peername(ClientSocket),
+    NewIdentifier = list_to_atom(lists:flatten(io_lib:format("worker@~p:~p:~p",[node(),Adress,Port]))),
+
+    case Msg of
+        {set_client_id, []} ->
+            log:t(["LLega set_client_id",[]]),
+            log:t([2,inet:peername(ClientSocket)]),
+            check_worker_proxy_for(NewIdentifier, ClientSocket),
+            worker_proxy:gearman_message(NewIdentifier, set_client_id, none) ;
+
+        {set_client_id, Identifier} ->
+            log:t(["LLega set_client_id",Identifier]),
+            log:t([3,inet:peername(ClientSocket)]),
+            check_worker_proxy_for(NewIdentifier, ClientSocket),
+            worker_proxy:gearman_message(NewIdentifier, set_client_id, Identifier) ;
+
+        {can_do, FunctionName} ->
+            log:t(["LLega can_do",FunctionName]),
+            log:t([4,inet:peername(ClientSocket)]),
+            check_worker_proxy_for(NewIdentifier, ClientSocket),
+            worker_proxy:gearman_message(NewIdentifier, can_do, FunctionName) ;
+
+        {grab_job, none} ->
+            log:t(["LLega grab_job"]),
+            log:t([5,inet:peername(ClientSocket)]),
+            check_worker_proxy_for(NewIdentifier, ClientSocket),
+            worker_proxy:gearman_message(NewIdentifier, grab_job, none) ;
+
+        {submit_job, [FunctionName | Arguments]} ->
+            process_job(normal, FunctionName, Arguments, ClientSocket) ;
+
+        {submit_job_high, [FunctionName | Arguments]} ->
+            process_job(high, FunctionName, Arguments, ClientSocket) ;
+
+        {submit_job_low, [FunctionName | Arguments]} ->
+            process_job(low, FunctionName, Arguments, ClientSocket) ;
+
+        {submit_job_bg, [FunctionName | Arguments]} ->
+            process_job_bg(normal, FunctionName, Arguments, ClientSocket) ;
+
+        {submit_job_high_bg, [FunctionName | Arguments]} ->
+            process_job_bg(high, FunctionName, Arguments, ClientSocket) ;
+
+        {submit_job_low_bg, [FunctionName | Arguments]} ->
+            process_job_bg(low, FunctionName, Arguments, ClientSocket) ;
+
+        Other ->
+            log:t(["LLega unknown",Other])
+    end  .
 
 
 %% doc
@@ -207,3 +217,20 @@ do_recv(Sock) ->
         {error, closed} ->
             {error, socket_closed}
     end.
+
+
+%% @doc
+%% Checks if any extension has hooks for
+%% this connection
+check_extensions(Msg) ->
+    lists_extensions:detect(fun(Elem) ->
+                                    erlang:apply(Elem, connection_hook_for, [Msg])
+                            end,
+                            configuration:extensions()) .
+
+
+%% @doc
+%% Applies one of the extensions using the
+%% received message and the client socket
+apply_extension(Extension, Msg, ClientSocket) ->
+    erlang:apply(Extension, entry_poing, [Msg, ClientSocket]) .

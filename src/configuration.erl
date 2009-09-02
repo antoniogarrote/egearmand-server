@@ -4,6 +4,7 @@
 
 -export([on_worker_failure/0, gearmand_nodes/0, persistent_queues/0, backup_gearmand_nodes/0]) .
 -export([rabbit_user/0, rabbit_password/0, rabbit_exchange_configuration/0, rabbit_channel_configuration/0]) .
+-export([extensions/0]) .
 
 
 %% @doc
@@ -72,3 +73,10 @@ backup_gearmand_nodes() ->
 %% persistent between servers restarts.
 -spec(persistent_queues() -> true | false) .
 persistent_queues() -> false .
+
+
+%% @doc
+%% The list of installed extensions
+-spec(extensions() -> [atom()]) .
+extensions() ->
+    [ rabbitmq_extension ] .

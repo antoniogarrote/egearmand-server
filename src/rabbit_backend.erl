@@ -183,7 +183,7 @@ publish_content(Content, Queue, BindingKey, State) ->
                                     routing_key = BindingKey,
                                     mandatory = false,
                                     immediate = false},
-    Payload = #amqp_msg{payload = log:t(list_to_binary([Content]))},
+    Payload = #amqp_msg{payload = list_to_binary([Content])},
     amqp_channel:call(State#rabbit_queue_state.channel, BasicPublish, Payload) .
 
 
@@ -207,19 +207,14 @@ spawn_consumer(Function, Channel) ->
     spawn(fun() ->
                   %% If the registration was sucessful, the consumer will
                   %% be notified
-                  log:t(1),
                   receive
-                      #'basic.consume_ok'{consumer_tag = ConsumerTag} -> log:t(1),
-                                                                         ok
+                      #'basic.consume_ok'{consumer_tag = ConsumerTag} -> ok
                   end,
-                  log:t([3, ConsumerTag]),
                   ConsumeLoop = fun(F) ->
 
-                                        log:t(["lets wait for messages"]),
                                         receive
                                             {#'basic.deliver'{delivery_tag = _DeliveryTag}, Content} ->
 
-                                                log:t("Got something"),
                                                 #amqp_msg{payload = DeliveredPayload} = Content,
                                                 %% TODO pass the value read to the Function passed as a parameter
                                                 Function([DeliveredPayload]),
@@ -315,12 +310,9 @@ direct_queue_test() ->
                                 ConsumeLoop = fun(F) ->
                                         %% When a message is routed to the queue, it will be
                                         %% delivered to this consumer
-                                        log:t(["lets wait for messages"]),
                                         receive
                                             {#'basic.deliver'{delivery_tag = _DeliveryTag}, Content} ->
 
-                                                log:t("Got something"),
-                                                log:t(["REC:", Content]),
                                                 #content{payload_fragments_rev = [Payload]} = Content,
                                                 %% TODO pass the value read to the Function passed as a parameter
                                                 io:format("Message received: ~p~n", [Payload]),
@@ -343,5 +335,5 @@ direct_queue_test() ->
                                     routing_key = BindKey,
                                     mandatory = false,
                                     immediate = false},
-    Payload = #amqp_msg{payload = log:t(list_to_binary(["hola"]))},
+    Payload = #amqp_msg{payload = list_to_binary(["hola"])},
     amqp_channel:call(Channel, BasicPublish, Payload) .
