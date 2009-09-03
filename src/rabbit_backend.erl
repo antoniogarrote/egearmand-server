@@ -47,6 +47,7 @@ init(_Arguments) ->
 
 
 handle_call({create, Options}, _From, State) ->
+    log:t(["CREATE HANDLE_CALL",Options]),
     AlreadyDeclared = proplists:is_defined(proplists:get_value(name,Options),State#rabbit_queue_state.queues),
     if AlreadyDeclared =:= false ->
             try declare_queue(Options, State) of
