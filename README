@@ -7,6 +7,19 @@ incipient error recovery and support for clustering.
 
 Erlang (tested with OTP R13B01),
 Ruby and Rake for compiling
+erlang-rfc4627 (included in the contrib directory)
+
+=== extensions
+
+From version 0.3 the server has initial support for extensions.
+An extension connecting the Gearman server implementation to the
+RabbitMQ queue system is included. To use the extension, be sure
+you have erlang-rfc4627 in the path and before calling to
+gearmand:start(), invoke rabbitmq_extension:start() from the 
+erlang shell. 
+There are examples in the /examples direcytory  of three ruby 
+scripts creating, publishing and consuming messages from a queue 
+through the egearmand server.
 
 === tests
 
@@ -25,5 +38,6 @@ $rake
 
 === running
 
-$erl -pa ebin
+$erl -pa ebin -pa contrib
+>rabbitmq_extension:start()               %% optional, if you want to try the rabbitmq extension
 >gearmand:start("localhost",4730) .
