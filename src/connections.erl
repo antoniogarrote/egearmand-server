@@ -94,11 +94,13 @@ process_connection(ClientSocket) ->
     lists:foreach(fun(Msg) ->
                           case check_extensions(Msg) of
                               %% No extension registered, just follow common gearman flow
-                              false ->
+                              {error, not_found} ->
+                                  log:t(["No extension for", Msg]),
                                   process_connection(Msg, ClientSocket) ;
                               %% There is an extension registered for this message.
                               %% We pass the control to the extension
-                              Extension ->
+                              {ok, Extension} ->
+                                  log:t(["Extension for", Msg]),
                                   apply_extension(Extension, Msg, ClientSocket)
                           end
                   end,
@@ -223,7 +225,8 @@ do_recv(Sock) ->
 %% this connection
 check_extensions(Msg) ->
     lists_extensions:detect(fun(Elem) ->
-                                    erlang:apply(Elem, connection_hook_for, [Msg])
+                                    log:t(["Let's check extension for",Elem, Msg]),
+                                    log:t(erlang:apply(Elem, connection_hook_for, [Msg]))
                             end,
                             configuration:extensions()) .
 
@@ -232,4 +235,4 @@ check_extensions(Msg) ->
 %% Applies one of the extensions using the
 %% received message and the client socket
 apply_extension(Extension, Msg, ClientSocket) ->
-    erlang:apply(Extension, entry_poing, [Msg, ClientSocket]) .
+    erlang:apply(Extension, entry_point, [Msg, ClientSocket]) .

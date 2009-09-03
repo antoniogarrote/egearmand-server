@@ -5,18 +5,18 @@
 -export([start/0, connection_hook_for/1, stop/0, entry_point/2]) .
 
 
-%% callbacks
+% callbacks
 
 
-%% @doc
-%% Starts the extension
+% @doc
+% Starts the extension
 start() ->
     rabbit_backend:start(),
     rabbit_backend:start_link() .
 
 
-%% @doc
-%% We state which messages we are interested to process
+% @doc
+% We state which messages we are interested to process
 -spec(connection_hook_for(atom()) -> boolean()) .
 
 connection_hook_for(Msg) ->
@@ -28,8 +28,8 @@ connection_hook_for(Msg) ->
     end .
 
 
-%% @doc
-%% We state which messages we are interested to process
+% @doc
+% We state which messages we are interested to process
 -spec(entry_point(atom(),any()) -> boolean()) .
 
 entry_point(Msg, Socket) ->
