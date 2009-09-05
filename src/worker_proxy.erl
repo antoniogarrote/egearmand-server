@@ -1,5 +1,10 @@
 -module(worker_proxy) .
 
+%% @doc
+%% A server that redirects messages to a connected worker.
+%% It also listens for additional messages from the worker
+%% through the worker connection socket.
+
 -author("Antonio Garrote Hernandez") .
 
 -behaviour(gen_server) .
@@ -7,28 +12,39 @@
 -include_lib("states.hrl") .
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/2
-, error_in_worker/2]).
+-export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/2, error_in_worker/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
+
 
 %% Public API
 
 
+%% @doc
+%% Creates the worker proxy fro a given worker identifier and worker socket.
 start_link(Id, WorkerSocket) ->
-    log:t(["registering globally worker_proxy: ",Id]),
+    log:debug(["worker_proxy start_link: ",Id]),
     gen_server:start_link({global, Id}, worker_proxy, #worker_proxy_state{ identifier = Id , socket = WorkerSocket }, []) .
 
+
+%% @doc
+%% Redirects a Gearman protocol message to the worker proxy.
 gearman_message(WorkerProxy,Msg,Arguments) ->
-    log:t(["routing to worker_proxy: ",WorkerProxy, Msg]),
+    log:debug(["worker_proxy gearman_message: ",WorkerProxy, Msg, Arguments]),
     gen_server:call({global, WorkerProxy}, {Msg, Arguments}) .
 
+
+%% @doc
+%% Reports an error inthe worker connection to the worker proxy.
 error_in_worker(WorkerProxy, Error) ->
-    log:t(["routing error to worker_proxy: ",WorkerProxy, error, Error]),
+    log:debug(["worker_proxy error_in_worker: ",WorkerProxy, error, Error]),
     gen_server:call({global, WorkerProxy}, {error_in_worker, Error}) .
     %TODO kill the proxy
 
+
+%% @doc
+%% Redirects a Gearman protocol message to the worker proxy.
 cast_gearman_message(WorkerProxy,Msg,Arguments) ->
-    log:t(["cast routing to worker_proxy: ",WorkerProxy, Msg]),
+    log:debug(["worker_proxy cast_gearman_message: ",WorkerProxy, Msg]),
     gen_server:cast({global, WorkerProxy}, {Msg, Arguments}) .
 
 
@@ -43,14 +59,12 @@ init(#worker_proxy_state{ identifier = Id, socket = WorkerSocket} = State) ->
 
 
 handle_call({set_client_id, Identifier}, _From, State) ->
-    %log:t(["set_client_id worker", State]) ,
     case Identifier =:= none of
         false -> {reply, ok, State#worker_proxy_state{identifier = Identifier}} ;
         true  -> {reply, ok, State }
     end ;
 
 handle_call({can_do, FunctionName}, _From, #worker_proxy_state{functions = Functions, identifier = Identifier} = State) ->
-    %log:t(["can_do worker", State]) ,
     {Outcome, FunctionsP} = update_functions(FunctionName, Functions),
     case Outcome of
         not_in_list -> enable_function(Identifier,FunctionName)
@@ -58,9 +72,7 @@ handle_call({can_do, FunctionName}, _From, #worker_proxy_state{functions = Funct
     {reply, ok, State#worker_proxy_state{functions = FunctionsP}} ;
 
 handle_call({cant_do, FunctionName}, _From, #worker_proxy_state{functions = Functions, identifier = Identifier} = State) ->
-    log:t(["cant_do worker", State]) ,
-    {Outcome, FunctionsP} = log:t(remove_function(FunctionName, Functions)),
-    log:t(1),
+    {Outcome, FunctionsP} = remove_function(FunctionName, Functions),
     case Outcome of
         removed_from_list -> disable_function(Identifier,FunctionName)
     end,
@@ -71,10 +83,9 @@ handle_call({reset_abilities, []}, _From, #worker_proxy_state{functions = Functi
     {reply, ok, State#worker_proxy_state{ functions = [] }} ;
 
 handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, socket = WorkerSocket} = State) ->
-    log:t(["grab_job", State]) ,
-    log:t(["looking for job for", Functions]) ,
+    log:debug(["looking for job for", Functions]) ,
     Job = check_queues_for(Functions),
-    log:t(["Found jobs for worker :",Job]),
+    log:debug(["Found jobs for worker :",Job]),
     case Job of
         not_found ->
             Response = protocol:pack_response(no_job, {}),
@@ -150,7 +161,6 @@ handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state
 
 
 handle_cast({noop, []}, #worker_proxy_state{ socket = WorkerSocket } = State) ->
-    log:t(["worker noop"]) ,
     Request = protocol:pack_response(noop,{}),
     gen_tcp:send(WorkerSocket, Request),
     {noreply, State} .
@@ -205,18 +215,16 @@ do_remove_function(FunctionName, [Other | Rest], Acum) ->
 
 
 worker_process_connection(ProxyIdentifier, WorkerSocket) ->
-    log:t("IN WORKER PROCESS CONNECTION"),
+    log:debug("worker_proxy worke_process_connection"),
     Read = connections:do_recv(WorkerSocket),
     case Read of
 
         {ok, Bin} ->
 
-            log:t(["Received from worker to proxy ", ProxyIdentifier, Bin]),
             Msgs = protocol:process_request(Bin, []),
-            log:t(["!!!!MGSG:", Msgs]),
             case Msgs of
                 {error, _DonCare} ->
-                    log:t(["Error reading from worker proxy socket", Msgs]),
+                    log:error(["worker_proxy worker_proxy_connection : Error reading from worker proxy socket", Msgs]),
                     worker_process_connection(ProxyIdentifier, WorkerSocket) ;
                 Msgs ->
                     % TODO: instead of foreach is better to use some recursion that can
@@ -225,74 +233,63 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
                                           case Msg of
 
                                               {grab_job, FunctionName} ->
-                                                  log:t(["worker proxy LLega grab_job",FunctionName]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, grab_job, FunctionName);
 
                                               {can_do, FunctionName} ->
-                                                  log:t(["worker proxy LLega can_do",FunctionName]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, can_do, FunctionName);
 
                                               {cant_do, FunctionName} ->
-                                                  log:t(["worker proxy LLega cant_do",FunctionName]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, cant_do, FunctionName) ;
 
                                               {work_complete, [JobIdentifier, Response]} ->
-                                                  log:t([" worker proxy LLega work_complete",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_complete, [JobIdentifier, Response]);
 
                                               {work_data, [JobIdentifier, OpaqueData]} ->
-                                                  log:t([" worker proxy LLega work_data",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_data, [JobIdentifier, OpaqueData]);
 
                                               {work_warning, [JobIdentifier, OpaqueData]} ->
-                                                  log:t([" worker proxy LLega work_warning",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_exception, [JobIdentifier, OpaqueData]);
 
                                               {work_status, [JobIdentifier, Numerator, Denominator]} ->
-                                                  log:t([" worker proxy LLega work_status",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_status, [JobIdentifier, Numerator, Denominator]) ;
 
                                               {work_exception, [JobIdentifier, Reason]} ->
-                                                  log:t([" worker proxy LLega work_exception",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_exception, [JobIdentifier, Reason]) ;
 
                                               {work_fail, [JobIdentifier]} ->
-                                                  log:t([" worker proxy LLega work_fail",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_fail, [JobIdentifier]);
 
                                               reset_abilities ->
-                                                  log:t([" worker proxy LLega reset_abilities"]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, reset_abilities, []);
 
                                               Other ->
-                                                  log:t(["worker proxy LLega unknown",Other])
+                                                  log:info(["worker_proxy worker_proxy_connection: unknown message",Other])
                                           end
                                   end,
                                   Msgs),
                     %% Let's check if some error was found while processing messages
-                    log:t(["!!!!MGSG AGAIN:", Msgs]),
-                    {FoundError, Error} = lists_extensions:detect(fun(Msg) -> case log:t(Msg) of 
+                    {FoundError, Error} = lists_extensions:detect(fun(Msg) -> case Msg of 
                                                                                   {error,_Kind} -> true ;
                                                                                   _Other        -> false
                                                                               end
                                                                   end, Msgs),
                     case FoundError of
                         error -> worker_process_connection(ProxyIdentifier, WorkerSocket) ;
-                        ok    -> worker_proxy:error_in_worker(ProxyIdentifier, log:t(Error))
+                        ok    -> worker_proxy:error_in_worker(ProxyIdentifier, Error)
                     end
             end ;
 
         Error ->
 
             % log for now
-            log:t(["Error in worker proxy", Error])
+            log:error(["worker_proxy worker_proxy_connection : Error in worker proxy", Error])
     end .
 
 check_queues_for([]) ->
     not_found ;
 check_queues_for([F | Fs]) ->
-    log:t(["worker proxy check_queues_for:", F]),
-    Found = log:t(jobs_queue_server:lookup_job(F)),
+    log:debug(["worker_proxy check_queues_for:", F]),
+    Found = jobs_queue_server:lookup_job(F),
     case Found of
         {ok, not_found} -> check_queues_for(Fs) ;
         {ok, Job} -> Job

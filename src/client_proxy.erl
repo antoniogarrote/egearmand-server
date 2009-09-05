@@ -1,5 +1,9 @@
 -module(client_proxy) .
 
+%% @doc
+%% A proxy redirecting messages to a client connection. It
+%% also listen for additional messages from the client.
+
 -author("Antonio Garrote Hernandez") .
 
 -behaviour(gen_server) .
@@ -14,13 +18,14 @@
 %% @doc
 %% Starts a new client for socket Socket and global identifier Identifier.
 start_link(Identifier, [Socket, JobHandle]) ->
-    log:t(["About to start client proxy",Identifier]),
+    log:debug(["client_proxy start_link",Identifier]),
     gen_server:start_link({global, Identifier}, client_proxy, [Identifier,Socket, JobHandle], []) .
 
 
 %% @doc
 %% Sends data to the client socket with proxy identified globally by Identifier.
 send(Identifier,Data) ->
+    log:debug(["client_proxy send", Identifier, Data]),
     gen_server:call({global, Identifier}, {send, Data}) .
 
 
@@ -28,11 +33,12 @@ send(Identifier,Data) ->
 %% Closes the socket associated to proxy Identifier and finishes the execution
 %% of the proxy.
 close(Identifier) ->
+    log:debug(["client_proxy close", Identifier]),
     gen_server:call({global, Identifier}, stop) .
 
 
 gearman_message(ClientProxy,Msg,Arguments) ->
-    log:t(["routing to client_proxy: ",ClientProxy, Msg]),
+    log:debug(["client_proxy gearman_message", ClientProxy, Msg, Arguments]),
     gen_server:call({global, ClientProxy}, {Msg, Arguments}) .
 
 
@@ -40,7 +46,6 @@ gearman_message(ClientProxy,Msg,Arguments) ->
 
 
 init([Identifier, Socket, JobHandle]) ->
-    log:t(["INIT...",Socket]),
     spawn(client_proxy, client_process_connection, [Identifier, Socket]),
     {ok, [Socket, JobHandle]} .
 
@@ -63,18 +68,16 @@ handle_call(stop, _From, State) ->
 
 
 client_process_connection(ProxyIdentifier, ClientSocket) ->
-    log:t("IN CLIENT PROCESS CONNECTION"),
+    log:debug(["client_proxy client_process_connection", ProxyIdentifier]),
     Read = connections:do_recv(ClientSocket),
     case Read of
 
         {ok, Bin} ->
 
-            log:t(["Received from client proxy ", ProxyIdentifier, Bin]),
             Msgs = protocol:process_request(Bin, []),
-            log:t(["!!!!MGSG:", Msgs]),
             case Msgs of
                 {error, _DonCare} ->
-                    log:t(["Error reading from client proxy socket", Msgs]),
+                    log:error(["client_proxy client_process_connection : reading from client proxy socket", Msgs]),
                     client_process_connection(ProxyIdentifier, ClientSocket) ;
                 Msgs ->
                     % TODO: instead of foreach is better to use recursion that can
@@ -83,29 +86,27 @@ client_process_connection(ProxyIdentifier, ClientSocket) ->
                                           case Msg of
 
                                               {option_req, [Option]} ->
-                                                  log:t([" client proxy LLega option_req",Option]),
                                                   client_proxy:gearman_message(ProxyIdentifier, option_req, [Option]);
 
                                               Other ->
-                                                  log:t(["client proxy LLega unknown",Other])
+                                                  log:info(["client_proxy client_process_connection : unknown message",Other])
                                           end
                                   end,
                                   Msgs),
                     %% Let's check if some error was found while processing messages
-                    log:t(["!!!!MGSG AGAIN:", Msgs]),
-                    {FoundError, _Error} = lists_extensions:detect(fun(Msg) -> case log:t(Msg) of 
+                    {FoundError, _Error} = lists_extensions:detect(fun(Msg) -> case Msg of 
                                                                                    {error,_Kind} -> true ;
                                                                                    _Other        -> false
                                                                                end
                                                                    end, Msgs),
                     case FoundError of
                         error -> client_process_connection(ProxyIdentifier, ClientSocket) ;
-                        ok    -> log:t(["Error in client proxy", FoundError]) % temporal
+                        ok    -> log:error(["client_proxy client_process_connection : ", FoundError]) % temporal
                     end
             end ;
 
         Error ->
 
             % log for now
-            log:t(["Error in client proxy", Error])
+            log:error(["client_proxy client_process_connection : error in client proxy", Error])
     end .

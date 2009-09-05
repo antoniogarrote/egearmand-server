@@ -1,0 +1,6 @@
+=== version 0.4 (09/06/2009)
+
+- Changelog
+- Support for all messages in the Gearman binary protocol.
+- Improved documentation and logging.
+- Centralized tests execution

@@ -1,5 +1,9 @@
 -module(rabbit_backend) .
 
+%% @doc
+%% Functions for manipulating a rabbitmq system
+%% used in the rabbitmq extension.
+
 -author("Antonio Garrote Hernandez") .
 
 -behaviour(gen_server) .
@@ -22,15 +26,24 @@ start() ->
     application:start(os_mon) ,
     application:start(rabbit) .
 
+
+%% @doc
+%% Starts the backend
 start_link() ->
     gen_server:start_link({local, rabbit_backend}, rabbit_backend, [], []) .
 
+
+%% Creates a new queu with Options.
 create_queue(Options) ->
     gen_server:call(rabbit_backend, {create, Options}) .
 
+
+%% Publishes Content to the Queue using RoutingKey.
 publish(Content, Queue, RoutingKey) ->
     gen_server:call(rabbit_backend, {publish, Content, Queue, RoutingKey}) .
 
+
+%% creates a new process consuming messages from the Queue.
 consume(F,Queue) ->
     gen_server:call(rabbit_backend, {consume, F, Queue}) .
 
@@ -47,7 +60,7 @@ init(_Arguments) ->
 
 
 handle_call({create, Options}, _From, State) ->
-    log:t(["CREATE HANDLE_CALL",Options]),
+    log:debug(["rabbit_backend handle_call create",Options]),
     AlreadyDeclared = proplists:is_defined(proplists:get_value(name,Options),State#rabbit_queue_state.queues),
     if AlreadyDeclared =:= false ->
             try declare_queue(Options, State) of
@@ -174,11 +187,11 @@ declare_queue(Options, State) ->
 
 publish_content(Content, Queue, BindingKey, State) ->
     QueueState = proplists:get_value(Queue, State#rabbit_queue_state.queues),
-    log:t(["Publishing to:",
-           {queue, Queue},
-           {ticket, State#rabbit_queue_state.ticket},
-           {exchange, QueueState#rabbit_queue.exchange},
-           {routing_key, BindingKey}]),
+    log:debug(["rabbit_backend publish_content :",
+               {queue, Queue},
+               {ticket, State#rabbit_queue_state.ticket},
+               {exchange, QueueState#rabbit_queue.exchange},
+               {routing_key, BindingKey}]),
     BasicPublish = #'basic.publish'{ticket = State#rabbit_queue_state.ticket,
                                     exchange = QueueState#rabbit_queue.exchange,
                                     routing_key = BindingKey,

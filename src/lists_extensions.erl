@@ -1,7 +1,7 @@
-%
-% @doc extra functions for manipulation of lists
-%
 -module(lists_extensions).
+
+%% @doc
+%% Extra functions for manipulation of lists.
 
 -author("Antonio Garrote Hernandez") .
 
@@ -9,6 +9,10 @@
 
 -export([compact/1, unique/1, splice/2, eachWithIndex/2, eachWithIndexP/2, interleave/1, mapWithIndex/2, detect/2, update_and_detect/2]).
 
+
+%% @doc
+%% Remove undefined occurences from a list.
+-spec(compact([any()]) -> [any()]) .
 
 compact(List) ->
     FilterList = fun(_,[],Acum) -> lists:reverse(Acum) ;
@@ -20,6 +24,11 @@ compact(List) ->
                  end,
     FilterList(FilterList,List,[]).
 
+
+%% @doc
+%% Removes duplicates from a list.
+-spec(unique([any()]) -> [any()]) .
+
 unique(List) ->
     FilterList = fun(_,[],Acum) -> lists:reverse(Acum) ;
                     (F,[H|T],Acum) ->
@@ -29,6 +38,11 @@ unique(List) ->
                          end
                  end,
     FilterList(FilterList,List,[]).
+
+
+%% @doc
+%% Dived a List in sublists of Max elements maximum
+-spec(splice(integer(),[any()]) -> [[any()]]) .
 
 splice(Max,List) ->
     DoSplice = fun(_,_,[],Acum) -> lists:reverse(Acum);
@@ -41,6 +55,11 @@ splice(Max,List) ->
                end,
     DoSplice(DoSplice,Max,List,[]).
 
+
+%% @doc
+%% Iterates using the proficed Fun over a list L passing
+%% as an argument the items of the list and an index for the
+%% item.
 eachWithIndex(Fun,L) ->
     DoPagination= fun(_,_,[]) -> undefined ;
                      (F,I,[H|T]) -> Fun(I,H),
@@ -48,18 +67,32 @@ eachWithIndex(Fun,L) ->
                   end,
     DoPagination(DoPagination,0,L).
 
+
+%% @doc
+%% Applies the map iterator to a list passing as arguments to the
+%% mapping function the element of the list and an index.
 mapWithIndex(Fun,L) ->
     DoPagination= fun(_,_,[],Acum) -> lists:reverse(Acum) ;
                      (F,I,[H|T],Acum) -> F(F,I+1,T,[Fun(I,H) | Acum])
                   end,
     DoPagination(DoPagination,0,L,[]).
 
+
+%% @doc
+%% Version of @see eachWithIndex that runs in parallel.
 eachWithIndexP(Fun,L) ->
     DoPagination= fun(_,_,[]) -> undefined ;
                      (F,I,[H|T]) -> spawn(fun() -> Fun(I,H) end),
                                     F(F,I+1,T)
                   end,
     DoPagination(DoPagination,0,L).
+
+
+%% @doc
+%% Mix a set of lists inserting the nth element of each list
+%% as nth, nth +1, nth + (number of lists - 1) elements of the
+%% mixed lists .
+-spec(interleave([[any()]]) -> [any()]) .
 
 interleave([]) -> [];
 interleave(Lists) ->
@@ -76,6 +109,10 @@ interleave(Lists) ->
                    end,
     DoInterleave(DoInterleave,Lists,[],length(lists:nth(1,Lists))).
 
+
+%% @doc
+%% Detects if an element is present in a list applying the predicate P to
+%% test the presence .
 detect(_P,[]) ->
     {error, not_found} ;
 
@@ -84,6 +121,7 @@ detect(P, [H | R]) ->
         true  -> {ok, H} ;
         false -> detect(P,R)
     end .
+
 
 %% @doc
 %% traverses a list applying a predicate, updates the value of the element 

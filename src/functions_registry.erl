@@ -1,5 +1,9 @@
 -module(functions_registry) .
 
+%% @doc
+%% A registry of all the functions in the server
+%% and the workers associated to each function.
+
 -author("Antonio Garrote Hernandez") .
 
 -behaviour(gen_server) .
@@ -14,18 +18,26 @@
 %% Public API
 
 
+%% @doc
+%% Establishes the connection.
 start_link() ->
     gen_server:start_link({local, functions_registry}, functions_registry, [], []) .
 
 
+%% @doc
+%% Register a worker proxy associated to the function FunctionName.
 register_function(Ref, FunctionName) ->
     gen_server:call(functions_registry,{register, Ref, FunctionName}) .
 
 
+%% @doc
+%% Unregisters a worker proxy from a function.
 unregister_from_function(Ref, FunctionName) ->
     gen_server:call(functions_registry,{unregister, Ref, FunctionName}) .
 
 
+%% @doc
+%% Retrieves all the workers associated to a function.
 workers_for_function(FunctionName) ->
     gen_server:call(functions_registry, {workers_for, FunctionName}) .
 
@@ -45,8 +57,6 @@ handle_call({unregister, Ref, FunctionName}, _From, _Store) ->
     {reply, ok, mnesia_store:delete({FunctionName, Ref}, function_register)} ;
 
 handle_call({workers_for, FunctionName}, _From, _Store) ->
-    log:t(1),
     Registers = mnesia_store:all(fun(X) -> X#function_register.function_name == FunctionName end, function_register),
-    log:t(Registers),
     Workers = lists:map(fun(FR) -> FR#function_register.reference end, Registers),
     {reply, Workers, function_register} .

@@ -1,5 +1,9 @@
 -module(mnesia_store) .
 
+%% @doc
+%% Creation and manipulation of a Mnesia
+%% persistence layer for the gearmand implementation.
+
 -author("Antonio Garrote Hernandez") .
 
 -include_lib("states.hrl").
@@ -9,6 +13,9 @@
 -export([start/0, create_tables/0, load_tables/0, insert/2, dequeue/2, all/2, delete/2, dirty_find/2, update/3]) .
 
 
+%% @doc
+%% Starts the mnesia backend, creating the schema and tables if required.
+%% The persistence settings are read from the configuration module.
 start() ->
     Persistent = configuration:persistent_queues(),
     if Persistent =:= false ->
@@ -24,6 +31,8 @@ start() ->
     load_tables() .
 
 
+%% @doc
+%% Create the backend tables for the mnesia data base.
 create_tables() ->
     PersistenceCopies = case configuration:persistent_queues() of
                             true -> [{disc_copies, configuration:backup_gearmand_nodes()}];
@@ -38,6 +47,10 @@ create_tables() ->
                                             {type, ordered_set},
                                             {attributes, record_info(fields,function_register)}] ++ PersistenceCopies) .
 
+
+%% @doc
+%% Waits until the tables are loaded and ready to use. This function blocks
+%% undefinitely.
 load_tables() ->
     mnesia:wait_for_tables([job_request, function_register], infinity).
 
@@ -51,24 +64,26 @@ dirty_find(Key, TableName) ->
         Other   -> {error,Other}
     end .
 
+
 %% @doc
 %% updates the one element in the store selecte by Key, using the provided
 %% predicate P
 update(P, Key, TableName) ->
-  F = fun() ->
-        case mnesia:read({TableName, Key}) of
-          []     -> not_found;
-          [Found] -> mnesia:write(P(Found))
-        end
-    end,
-  {atomic, Result} = mnesia:transaction(F),
-  Result.
+    log:info(["mnesia_store update",TableName]),
+    F = fun() ->
+                case mnesia:read({TableName, Key}) of
+                    []     -> not_found;
+                    [Found] -> mnesia:write(P(Found))
+                end
+        end,
+    {atomic, Result} = mnesia:transaction(F),
+    Result.
 
 
 %% @doc
 %% Inserts a new value in one of the queues identified by Key.
 insert(Value, TableName) ->
-    log:t(["Mnesia inserting",Value, TableName]),
+    log:info(["mnesia inserting",Value, TableName]),
     mnesia:transaction(fun() -> mnesia:write( Value ) end),
     TableName .
 
@@ -77,6 +92,7 @@ insert(Value, TableName) ->
 %% retrieves the first element from queue with value Key deleting it
 %% from the queue
 dequeue(PKey, TableName) ->
+    log:info(["mnesia dequeue", TableName]),
     {atomic, Value } = mnesia:transaction(fun() ->
                                                   C = qlc:cursor(qlc:sort(qlc:q([X || X <- mnesia:table(TableName), PKey(X)]))),
                                                   case  qlc:next_answers(C,1) of
@@ -93,12 +109,14 @@ dequeue(PKey, TableName) ->
 %% @doc
 %% Deletes the object with the given key from the table.
 delete(Key, TableName) ->
+    log:info(["mnesia_store delete",TableName]),
     mnesia:transaction(fun() -> mnesia:delete({ TableName, Key}) end) .
 
 
 %% @doc
 %% retrieves all the elements for a key
 all(P,TableName) ->
+    log:info(["mnesia_store all",TableName]),
     {atomic, Res} = mnesia:transaction(fun() -> qlc:eval( qlc:q([X || X <- mnesia:table(TableName), P(X)])) end),
     Res .
 
