@@ -41,6 +41,9 @@ parse_command(CommandID, Data) ->
         28 ->
             [Handle, Opaque] = split(Data, 0, 1),
             {work_data, Handle, Opaque};
+        25 ->
+            [Handle, Opaque] = split(Data, 0, 1),
+            {work_exception, Handle, Opaque};
         14 -> {work_fail, Data}; % Handle
         17 -> {echo_res, Data}; % Text
         19 ->
@@ -74,6 +77,8 @@ parse_command(CommandID, Data) ->
             {submit_job_bg, Function, Unique, Argument};
         8 -> {job_created, Data}; % Handle
         15 -> {get_status, Data}; % Handle
+        26 -> {option_req, Data}; % Name of the option
+        27 -> {option_res, Data}; % Name of the option
         20 ->
             [Handle, Known, Running, Numerator, Denominator] = split(Data, 0, 4),
             {status_res, Handle, Known, Running, list_to_integer(Numerator), list_to_integer(Denominator)}
@@ -96,6 +101,7 @@ pack_command(work_status, {Handle, Numerator, Denominator}) -> {12, [Handle, int
 pack_command(work_complete, {Handle, Result}) -> {13, [Handle, Result]};
 pack_command(work_data, {Handle, Result}) -> {28, [Handle, Result]};
 pack_command(work_fail, {Handle}) -> {14, [Handle]};
+pack_command(work_exception, {Handle, Reason}) -> {25, [Handle, Reason]};
 pack_command(echo_res, {Text}) -> {17, [Text]};
 pack_command(error, {Code, Text}) -> {19, [integer_to_list(Code), Text]};
 pack_command(can_do, {Func}) -> {1, [Func]};
@@ -114,6 +120,8 @@ pack_command(submit_job_low, {Func, Uniq, Arg}) -> {33, [Func, Uniq, Arg]};
 pack_command(submit_job_bg, {Func, Uniq, Arg}) -> {18, [Func, Uniq, Arg]};
 pack_command(job_created, {Handle}) -> {8, [Handle]};
 pack_command(get_status, {Handle}) -> {15, [Handle]};
+pack_command(option_req, {Option}) -> {26, [Option]};
+pack_command(option_res, {Option}) -> {27, [Option]};
 pack_command(status_res, {Handle, Known, Running, Numerator, Denominator}) -> {20, [Handle, Known, Running, integer_to_list(Numerator), integer_to_list(Denominator)]}.
 
 

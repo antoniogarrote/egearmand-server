@@ -22,13 +22,14 @@ gearman_message(WorkerProxy,Msg,Arguments) ->
     gen_server:call({global, WorkerProxy}, {Msg, Arguments}) .
 
 error_in_worker(WorkerProxy, Error) ->
-    log:t(["routing to worker_proxy: ",WorkerProxy, error, Error]),
+    log:t(["routing error to worker_proxy: ",WorkerProxy, error, Error]),
     gen_server:call({global, WorkerProxy}, {error_in_worker, Error}) .
     %TODO kill the proxy
 
 cast_gearman_message(WorkerProxy,Msg,Arguments) ->
     log:t(["cast routing to worker_proxy: ",WorkerProxy, Msg]),
     gen_server:cast({global, WorkerProxy}, {Msg, Arguments}) .
+
 
 %% Callbacks
 
@@ -45,6 +46,15 @@ handle_call({can_do, FunctionName}, _From, #worker_proxy_state{functions = Funct
     {Outcome, FunctionsP} = update_functions(FunctionName, Functions),
     case Outcome of
         not_in_list -> enable_function(Identifier,FunctionName)
+    end,
+    {reply, ok, State#worker_proxy_state{functions = FunctionsP}} ;
+
+handle_call({cant_do, FunctionName}, _From, #worker_proxy_state{functions = Functions, identifier = Identifier} = State) ->
+    log:t(["cant_do worker", State]) ,
+    {Outcome, FunctionsP} = log:t(remove_function(FunctionName, Functions)),
+    log:t(1),
+    case Outcome of
+        removed_from_list -> disable_function(Identifier,FunctionName)
     end,
     {reply, ok, State#worker_proxy_state{functions = FunctionsP}} ;
 
@@ -96,6 +106,16 @@ handle_call({work_data, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_state
     end,
     {reply, ok, State} ;
 
+handle_call({work_exception, [JobIdentifier, Reason]}, _From, #worker_proxy_state{ current = Job } = State) ->
+    ExceptionsEnabled = jobs_queue_server:check_option_for_job(<<"exceptions">>, Job),
+    if
+        (Job#job_request.client_socket_id =/= no_socket) and ExceptionsEnabled ->
+            Response = protocol:pack_response(work_exception, {JobIdentifier, Reason}),
+            client_proxy:send(Job#job_request.client_socket_id, Response) ;
+        true -> dont_care
+    end,
+    {reply, ok, State} ;
+
 handle_call({work_fail, [JobIdentifier]}, _From, #worker_proxy_state{ current = Job } = State) ->
     if
         Job#job_request.client_socket_id =/= no_socket ->
@@ -136,10 +156,16 @@ notify_error(#worker_proxy_state{ current = Job })  ->
 enable_function(Identifier, FunctionName) ->
     functions_registry:register_function(Identifier, FunctionName) .
 
+disable_function(Identifier, FunctionName) ->
+    functions_registry:unregister_from_function(Identifier, FunctionName) .
+
+%% @doc
+%% stores a function in the functions array if it 
+%% wasn't already stored
+-spec(update_functions(atom(), [atom()]) -> {(not_in_list | already_in_list), [atom()]}) .
 
 update_functions(FunctionName, Functions) ->
     do_update_functions(FunctionName, Functions, []) .
-
 
 do_update_functions(FunctionName, [], Acum) ->
     {not_in_list, [FunctionName | Acum]} ;
@@ -147,6 +173,21 @@ do_update_functions(FunctionName, [FunctionName | Rest], Acum) ->
     {already_in_list, [FunctionName | Rest] ++ Acum} ;
 do_update_functions(FunctionName, [Other | Rest], Acum) ->
     do_update_functions(FunctionName, Rest, [Other | Acum]) .
+
+
+%% @doc
+%% removes the function if it was stored in the functions array
+-spec(remove_function(atom(), [atom()]) -> {(not_in_list | removed_from_list), [atom()]}) .
+
+remove_function(FunctionName, Functions) ->
+    do_remove_function(FunctionName, Functions, []) .
+
+do_remove_function(_FunctionName, [], Acum) ->
+    {not_in_list, Acum} ;
+do_remove_function(FunctionName, [FunctionName | Rest], Acum) ->
+    {removed_from_list, Rest ++ Acum} ;
+do_remove_function(FunctionName, [Other | Rest], Acum) ->
+    do_remove_function(FunctionName, Rest, [Other | Acum]) .
 
 
 worker_process_connection(ProxyIdentifier, WorkerSocket) ->
@@ -174,8 +215,12 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, grab_job, FunctionName);
 
                                               {can_do, FunctionName} ->
-                                                  log:t([" worker proxy LLega can_do",FunctionName]),
+                                                  log:t(["worker proxy LLega can_do",FunctionName]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, can_do, FunctionName);
+
+                                              {cant_do, FunctionName} ->
+                                                  log:t(["worker proxy LLega cant_do",FunctionName]),
+                                                  worker_proxy:gearman_message(ProxyIdentifier, cant_do, FunctionName) ;
 
                                               {work_complete, [JobIdentifier, Response]} ->
                                                   log:t([" worker proxy LLega can_do",JobIdentifier]),
@@ -188,6 +233,10 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
                                               {work_status, [JobIdentifier, Numerator, Denominator]} ->
                                                   log:t([" worker proxy LLega work_status",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_status, [JobIdentifier, Numerator, Denominator]) ;
+
+                                              {work_exception, [JobIdentifier, Reason]} ->
+                                                  log:t([" worker proxy LLega work_exception",JobIdentifier]),
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_exception, [JobIdentifier, Reason]) ;
 
                                               {work_fail, [JobIdentifier]} ->
                                                   log:t([" worker proxy LLega can_do",JobIdentifier]),
@@ -236,3 +285,14 @@ update_functions_test() ->
     ?assertEqual(Result,{not_in_list, [test]}),
     ResultB = update_functions(test,[test]),
     ?assertEqual(ResultB,{already_in_list, [test]}) .
+
+
+remove_function_test() ->
+    Result = update_functions(test,[]),
+    ?assertEqual(Result,{not_in_list, [test]}),
+    ResultB = update_functions(test,[test]),
+    ?assertEqual(ResultB,{already_in_list, [test]}),
+    {_St, Fs} = ResultB,
+    ?assertEqual(remove_function(test,Fs),{removed_from_list, []}),
+    ?assertEqual(remove_function(item_not_in_list,Fs),{not_in_list, [test]}) .
+

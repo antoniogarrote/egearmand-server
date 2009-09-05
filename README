@@ -15,10 +15,10 @@ From version 0.3 the server has initial support for extensions.
 An extension connecting the Gearman server implementation to the
 RabbitMQ queue system is included. To use the extension, be sure
 you have erlang-rfc4627 in the path and before calling to
-gearmand:start(), invoke rabbitmq_extension:start() from the 
-erlang shell. 
-There are examples in the /examples direcytory  of three ruby 
-scripts creating, publishing and consuming messages from a queue 
+gearmand:start(), invoke rabbitmq_extension:start() from the
+erlang shell.
+There are examples in the /examples direcytory  of three ruby
+scripts creating, publishing and consuming messages from a queue
 through the egearmand server.
 
 === tests
@@ -29,7 +29,7 @@ Few and scattered through the source files.
 
 By now in file src/configuration.erl. Take a look at the comments.
 Must be edited before compiling.
-If you want to use persistent queues, you must create the replicated Mnesia schema before calling to gearmand:start(). 
+If you want to use persistent queues, you must create the replicated Mnesia schema before calling to gearmand:start().
 You can use mnesia_store:create_tables(), after initiating calling to mnesia:create_schema(configuration:gearmand_nodes()).
 
 === compile

@@ -10,6 +10,7 @@
                        opaque_data :: binary(),
                        level :: low | normal | high,
                        status = {0,0} :: {integer(), integer()},
+                       options = [] :: {[binary()]},
                        client_socket_id :: atom() }) .
 
 -record(worker_proxy_state,{ identifier :: binary(),

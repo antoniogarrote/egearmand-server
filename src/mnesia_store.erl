@@ -6,7 +6,7 @@
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("eunit/include/eunit.hrl") .
 
--export([start/0, create_tables/0, load_tables/0, insert/2, dequeue/2, all/2]) .
+-export([start/0, create_tables/0, load_tables/0, insert/2, dequeue/2, all/2, delete/2, dirty_find/2, update/3]) .
 
 
 start() ->
@@ -40,6 +40,29 @@ create_tables() ->
 
 load_tables() ->
     mnesia:wait_for_tables([job_request, function_register], infinity).
+
+
+%% @doc
+%% looks by key in the table without transaction
+dirty_find(Key, TableName) ->
+    case mnesia:dirty_read({TableName, Key}) of
+        [Elem]  -> Elem ;
+        []      -> not_found ;
+        Other   -> {error,Other}
+    end .
+
+%% @doc
+%% updates the one element in the store selecte by Key, using the provided
+%% predicate P
+update(P, Key, TableName) ->
+  F = fun() ->
+        case mnesia:read({TableName, Key}) of
+          []     -> not_found;
+          [Found] -> mnesia:write(P(Found))
+        end
+    end,
+  {atomic, Result} = mnesia:transaction(F),
+  Result.
 
 
 %% @doc
@@ -134,6 +157,20 @@ deletion_test() ->
                                 delete({test, high}, job_request),
                                 {Ret2,job_request} = dequeue(fun(V) -> V#job_request.queue_key == {test, high} end,  job_request),
                                 ?assertEqual(Ret2, not_found)
+                        end) .
+
+dirty_find_test() ->
+    with_empty_database(fun() ->
+                                Res = insert(#job_request{identifier=1,
+                                                          queue_key = {test, high},
+                                                          function=test,
+                                                          level= high},
+                                             job_request),
+                                ?assertEqual(Res,job_request),
+                                RequestFound = dirty_find(1,  job_request),
+                                ?assertEqual(1, RequestFound#job_request.identifier),
+                                RequestFound_2 = dirty_find(3,  job_request),
+                                ?assertEqual(not_found, RequestFound_2)
                         end) .
 
 all_test() ->

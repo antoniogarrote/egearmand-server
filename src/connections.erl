@@ -58,7 +58,9 @@ handle_call({check_worker_proxy, Ref, Socket}, _From, #connections_state{ worker
             {reply, Ref, State#connections_state{ worker_proxies = [Ref | Ws] }}
     end .
 
+
 %% private functions
+
 
 %% @doc
 %% Main thread accepting connections from the gearmand port.
