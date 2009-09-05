@@ -103,7 +103,7 @@ all(P,TableName) ->
     Res .
 
 
-% tests
+%% tests
 
 
 with_empty_database(T) ->
@@ -187,4 +187,16 @@ all_test() ->
                                        job_request),
                                 Res = all(fun(V) -> V#job_request.queue_key == {test, high} end, job_request),
                                 ?assertEqual(length(Res),2)
+                        end) .
+
+update_test() ->
+    with_empty_database(fun() ->
+                                insert(#job_request{identifier=1,
+                                                    queue_key = {test, high},
+                                                    function=test,
+                                                    level= high},
+                                       job_request),
+                                update(fun(X) -> X#job_request{ level = low } end, 1, job_request),
+                                RequestFound = dirty_find(1,  job_request),
+                                ?assertEqual(RequestFound#job_request.level,low)
                         end) .

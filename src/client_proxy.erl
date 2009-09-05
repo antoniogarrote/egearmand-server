@@ -51,11 +51,11 @@ handle_call({option_req, [Option]}, _From, [Socket, JobHandle] = State) ->
     gen_tcp:send(Socket, Response),
     {reply, ok, State} ;
 
-handle_call({send, Data}, _From, [Socket, JobHandle] = State) ->
+handle_call({send, Data}, _From, [Socket, _JobHandle] = State) ->
     Res = gen_tcp:send(Socket, Data),
     {reply, Res, State} ;
 
-handle_call(stop, _From, [Socket, JobHandle] = State) ->
+handle_call(stop, _From, State) ->
     {stop, normal, stopped, State} .
 
 
@@ -93,11 +93,11 @@ client_process_connection(ProxyIdentifier, ClientSocket) ->
                                   Msgs),
                     %% Let's check if some error was found while processing messages
                     log:t(["!!!!MGSG AGAIN:", Msgs]),
-                    {FoundError, Error} = lists_extensions:detect(fun(Msg) -> case log:t(Msg) of 
-                                                                                  {error,_Kind} -> true ;
-                                                                                  _Other        -> false
-                                                                              end
-                                                                  end, Msgs),
+                    {FoundError, _Error} = lists_extensions:detect(fun(Msg) -> case log:t(Msg) of 
+                                                                                   {error,_Kind} -> true ;
+                                                                                   _Other        -> false
+                                                                               end
+                                                                   end, Msgs),
                     case FoundError of
                         error -> client_process_connection(ProxyIdentifier, ClientSocket) ;
                         ok    -> log:t(["Error in client proxy", FoundError]) % temporal

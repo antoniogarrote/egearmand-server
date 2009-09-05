@@ -141,6 +141,10 @@ process_connection(Msg, ClientSocket) ->
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, grab_job, none) ;
 
+        {echo_req, Opaque} ->
+            log:t("LLega echo_req"),
+            gen_tcp:send(ClientSocket, protocol:pack_response(echo_res, {Opaque})) ;
+
         {submit_job, [FunctionName | Arguments]} ->
             process_job(normal, FunctionName, Arguments, ClientSocket) ;
 

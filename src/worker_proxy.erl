@@ -7,7 +7,8 @@
 -include_lib("states.hrl") .
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/2, error_in_worker/2]).
+-export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/2
+, error_in_worker/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
 
 %% Public API
@@ -41,6 +42,13 @@ init(#worker_proxy_state{ identifier = Id, socket = WorkerSocket} = State) ->
     {ok, State} .
 
 
+handle_call({set_client_id, Identifier}, _From, State) ->
+    %log:t(["set_client_id worker", State]) ,
+    case Identifier =:= none of
+        false -> {reply, ok, State#worker_proxy_state{identifier = Identifier}} ;
+        true  -> {reply, ok, State }
+    end ;
+
 handle_call({can_do, FunctionName}, _From, #worker_proxy_state{functions = Functions, identifier = Identifier} = State) ->
     %log:t(["can_do worker", State]) ,
     {Outcome, FunctionsP} = update_functions(FunctionName, Functions),
@@ -58,12 +66,9 @@ handle_call({cant_do, FunctionName}, _From, #worker_proxy_state{functions = Func
     end,
     {reply, ok, State#worker_proxy_state{functions = FunctionsP}} ;
 
-handle_call({set_client_id, Identifier}, _From, State) ->
-    %log:t(["set_client_id worker", State]) ,
-    case Identifier =:= none of
-        false -> {reply, ok, State#worker_proxy_state{identifier = Identifier}} ;
-        true  -> {reply, ok, State }
-    end ;
+handle_call({reset_abilities, []}, _From, #worker_proxy_state{functions = Functions, identifier = Identifier} = State) ->
+    lists:foreach(fun(F) -> disable_function(Identifier,F) end, Functions),
+    {reply, ok, State#worker_proxy_state{ functions = [] }} ;
 
 handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, socket = WorkerSocket} = State) ->
     log:t(["grab_job", State]) ,
@@ -101,6 +106,15 @@ handle_call({work_data, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_state
     if
         Job#job_request.client_socket_id =/= no_socket ->
             Response = protocol:pack_response(work_data, {JobIdentifier, OpaqueData}),
+            client_proxy:send(Job#job_request.client_socket_id, Response) ;
+        true -> dont_care
+    end,
+    {reply, ok, State} ;
+
+handle_call({work_warning, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_state{ current = Job } = State) ->
+    if
+        Job#job_request.client_socket_id =/= no_socket ->
+            Response = protocol:pack_response(work_warning, {JobIdentifier, OpaqueData}),
             client_proxy:send(Job#job_request.client_socket_id, Response) ;
         true -> dont_care
     end,
@@ -223,12 +237,16 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, cant_do, FunctionName) ;
 
                                               {work_complete, [JobIdentifier, Response]} ->
-                                                  log:t([" worker proxy LLega can_do",JobIdentifier]),
+                                                  log:t([" worker proxy LLega work_complete",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_complete, [JobIdentifier, Response]);
 
                                               {work_data, [JobIdentifier, OpaqueData]} ->
-                                                  log:t([" worker proxy LLega can_do",JobIdentifier]),
+                                                  log:t([" worker proxy LLega work_data",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_data, [JobIdentifier, OpaqueData]);
+
+                                              {work_warning, [JobIdentifier, OpaqueData]} ->
+                                                  log:t([" worker proxy LLega work_warning",JobIdentifier]),
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_exception, [JobIdentifier, OpaqueData]);
 
                                               {work_status, [JobIdentifier, Numerator, Denominator]} ->
                                                   log:t([" worker proxy LLega work_status",JobIdentifier]),
@@ -239,8 +257,12 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_exception, [JobIdentifier, Reason]) ;
 
                                               {work_fail, [JobIdentifier]} ->
-                                                  log:t([" worker proxy LLega can_do",JobIdentifier]),
+                                                  log:t([" worker proxy LLega work_fail",JobIdentifier]),
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_fail, [JobIdentifier]);
+
+                                              reset_abilities ->
+                                                  log:t([" worker proxy LLega reset_abilities"]),
+                                                  worker_proxy:gearman_message(ProxyIdentifier, reset_abilities, []);
 
                                               Other ->
                                                   log:t(["worker proxy LLega unknown",Other])

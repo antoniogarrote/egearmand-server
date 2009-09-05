@@ -41,6 +41,9 @@ parse_command(CommandID, Data) ->
         28 ->
             [Handle, Opaque] = split(Data, 0, 1),
             {work_data, Handle, Opaque};
+        29 ->
+            [Handle, Opaque] = split(Data, 0, 1),
+            {work_warning, Handle, Opaque};
         25 ->
             [Handle, Opaque] = split(Data, 0, 1),
             {work_exception, Handle, Opaque};
@@ -100,6 +103,7 @@ pack_command(echo_req, {Text}) -> {16, [Text]};
 pack_command(work_status, {Handle, Numerator, Denominator}) -> {12, [Handle, integer_to_list(Numerator), integer_to_list(Denominator)]};
 pack_command(work_complete, {Handle, Result}) -> {13, [Handle, Result]};
 pack_command(work_data, {Handle, Result}) -> {28, [Handle, Result]};
+pack_command(work_warning, {Handle, Warning}) -> {29, [Handle, Warning]};
 pack_command(work_fail, {Handle}) -> {14, [Handle]};
 pack_command(work_exception, {Handle, Reason}) -> {25, [Handle, Reason]};
 pack_command(echo_res, {Text}) -> {17, [Text]};

@@ -15,4 +15,4 @@ cmd_start([Host, Port]) ->
     start(Host, Port) .
 
 
-version() -> "0.3" .
+version() -> "0.4" .
