@@ -7,7 +7,7 @@ ERLC_FLAGS = "-I#{INCLUDE} +warn_unused_vars +warn_unused_import +debug_info "
 SRC = FileList['src/**/*.erl']
 OBJ = SRC.pathmap("%{ebin}X.beam")
 
-CLEAN.include("ebin/*.beam")
+CLEAN.include("ebin/*")
 
 directory 'ebin'
 
@@ -25,8 +25,14 @@ end
 
 task :compile => ['ebin'] + OBJ
 
-task :copy_records do
- sh "cp src/*.hrl ebin/"
+task :deps do
+  sh "cd contrib/erlang-rfc4627/ && make"
+  sh "cp contrib/erlang-rfc4627/ebin/*.beam ebin/"
 end
 
-task :default => [:compile, :copy_records]
+task :copy do
+  sh "cp src/*.hrl ebin/"
+  sh "cp src/*.app ebin/"
+end
+
+task :default => [:compile, :deps, :copy]

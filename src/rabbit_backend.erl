@@ -12,7 +12,7 @@
 -include_lib("rabbitmq_erlang_client/include/amqp_client.hrl").
 
 -export([start/0, start_link/0]) .
--export([init/1, handle_call/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 
 %% public API
@@ -97,6 +97,16 @@ handle_call({consume, Function, Queue}, _From, State) ->
        true -> register_consumer(Function, Queue, State),
                {reply, ok, State}
     end .
+
+%% dummy callbacks so no warning are shown at compile time
+handle_cast(_Msg, State) ->
+    {noreply, State} .
+
+handle_info(_Msg, State) ->
+    {noreply, State}.
+
+terminate(shutdown, #connections_state{ socket = ServerSock }) ->
+    ok.
 
 
 %% private API

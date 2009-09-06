@@ -9,7 +9,7 @@
 -behaviour(gen_server) .
 
 -export([start_link/2, send/2, client_process_connection/2]) .
--export([init/1, handle_call/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 
 %% Public API
@@ -62,6 +62,18 @@ handle_call({send, Data}, _From, [Socket, _JobHandle] = State) ->
 
 handle_call(stop, _From, State) ->
     {stop, normal, stopped, State} .
+
+
+%% dummy callbacks so no warning are shown at compile time
+handle_cast(_Msg, State) ->
+    {noreply, State} .
+
+
+handle_info(_Msg, State) ->
+    {noreply, State}.
+
+terminate(shutdown, State) ->
+    ok.
 
 
 %% private API

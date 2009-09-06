@@ -13,7 +13,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/2, error_in_worker/2]).
--export([init/1, handle_call/3, handle_cast/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 
 %% Public API
@@ -164,6 +164,14 @@ handle_cast({noop, []}, #worker_proxy_state{ socket = WorkerSocket } = State) ->
     Request = protocol:pack_response(noop,{}),
     gen_tcp:send(WorkerSocket, Request),
     {noreply, State} .
+
+
+handle_info(_Msg, State) ->
+    {noreply, State}.
+
+
+terminate(shutdown, State) ->
+    ok.
 
 
 %% private functions

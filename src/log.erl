@@ -10,8 +10,8 @@
 -import(io).
 
 -export([t/1,p/1,error/1, info/1, warning/1, debug/1, ot/1]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([start_link/1, msg/2]).
--export([init/1, handle_cast/2]).
 
 
 %% Public API
@@ -92,9 +92,24 @@ init(Options) ->
 
 
 handle_cast({Level, Msg}, State) ->
-    ShouldLog = should_log_p(Level,State),
-    if  ShouldLog -> process(Msg, State) end,
+    case should_log_p(Level,State) of
+        true  -> process(Msg, State) ;
+        false -> dont_care
+    end,
     {noreply, State} .
+
+
+%% dummy callbacks so no warning are shown at compile time
+handle_call(_Msg, _From, State) ->
+    {reply, State} .
+
+
+handle_info(_Msg, State) ->
+    {noreply, State}.
+
+
+terminate(shutdown, State) ->
+    ok.
 
 
 %% private functions

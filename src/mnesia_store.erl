@@ -10,7 +10,7 @@
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("eunit/include/eunit.hrl") .
 
--export([start/0, create_tables/0, load_tables/0, insert/2, dequeue/2, all/2, delete/2, dirty_find/2, update/3]) .
+-export([otp_start/0, start/0, create_tables/0, load_tables/0, insert/2, dequeue/2, all/2, delete/2, dirty_find/2, update/3]) .
 
 
 %% @doc
@@ -24,6 +24,17 @@ start() ->
 
     application:start(mnesia),
 
+    if Persistent =:= false ->
+            create_tables()
+    end,
+
+    load_tables() .
+
+otp_start() ->
+    Persistent = configuration:persistent_queues(),
+    if Persistent =:= false ->
+            mnesia:create_schema(configuration:gearmand_nodes())
+    end,
     if Persistent =:= false ->
             create_tables()
     end,

@@ -8,7 +8,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_link/1, start_link/2, close_connection/0, check_worker_proxy_for/2, do_recv/2, do_recv/1, server_socket_process/2, process_connection/1]).
--export([init/1, handle_call/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 %% Public API
 
@@ -39,7 +39,6 @@ init(#connections_state{ configuration = Configuration} = State) ->
                                        {ip,Ip},
                                        {packet, 0},
                                        {active, false}]),
-
     spawn(connections, server_socket_process, [ServerSock, connections]),
     {ok, State#connections_state{ socket = ServerSock } }.
 
@@ -56,6 +55,21 @@ handle_call({check_worker_proxy, Ref, Socket}, _From, #connections_state{ worker
             worker_proxy:start_link(Ref, Socket),
             {reply, Ref, State#connections_state{ worker_proxies = [Ref | Ws] }}
     end .
+
+
+%% dummy callbacks so no warning are shown at compile time
+handle_cast(_Msg, State) ->
+    {noreply, State} .
+
+handle_info(_Msg, State) ->
+    {noreply, State}.
+
+
+%% @doc
+%% Closes the socket when stoping the server
+terminate(shutdown, #connections_state{ socket = ServerSock }) ->
+    gen_tcp:close(ServerSock),
+    ok.
 
 
 %% private functions

@@ -9,6 +9,13 @@ Erlang (tested with OTP R13B01),
 Ruby and Rake for compiling
 erlang-rfc4627 (included in the contrib directory)
 
+=== OTP application support
+
+The server can be started as an OTP application, try.
+> application:start(egearmand) .
+You can change the configuration of the application editing the
+file ebin/egearmand.app, editing the host, port, and log mechanism.
+
 === extensions
 
 From version 0.3 the server has initial support for extensions.
@@ -41,3 +48,8 @@ $rake
 === running
 
 ./egearmand [-host host] [-port port] [-log path] [-level (debug | info | warning | error)]
+
+=== examples
+
+The distribution includes some examples of clients and workers using to test the server and the RabbitMQ extension.
+The examples are coded in Ruby, and use the xing-gearman-ruby gem to work. You can obtain it from github: git://github.com/xing/gearman-ruby.git

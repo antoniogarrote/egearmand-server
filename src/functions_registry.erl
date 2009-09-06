@@ -11,7 +11,7 @@
 -include_lib("states.hrl") .
 -include_lib("eunit/include/eunit.hrl").
 
--export([init/1, handle_call/3]) .
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([start_link/0, register_function/2, unregister_from_function/2, workers_for_function/1]) .
 
 
@@ -60,3 +60,14 @@ handle_call({workers_for, FunctionName}, _From, _Store) ->
     Registers = mnesia_store:all(fun(X) -> X#function_register.function_name == FunctionName end, function_register),
     Workers = lists:map(fun(FR) -> FR#function_register.reference end, Registers),
     {reply, Workers, function_register} .
+
+
+%% dummy callbacks so no warning are shown at compile time
+handle_cast(_Msg, State) ->
+    {noreply, State} .
+
+handle_info(_Msg, State) ->
+    {noreply, State}.
+
+terminate(shutdown, State) ->
+    ok.
