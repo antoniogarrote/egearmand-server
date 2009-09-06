@@ -9,7 +9,7 @@
 
 -import(io).
 
--export([t/1,p/1,error/1, info/1, warning/1, debug/1, ot/1]).
+-export([t/1,p/1,error/1, info/1, warning/1, debug/1, ot/1, timestamp/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([start_link/1, msg/2]).
 
@@ -71,7 +71,7 @@ warning(Msg) ->
 %% @doc
 %% Sends a log message to the logger server with the given log level
 msg(Level, Msg) ->
-    MsgP = io_lib:format("~n*** ~p: ~n~p~n***~n",[Level,Msg]),
+    MsgP = io_lib:format("~n*** ~p:~s ~n~p~n***~n",[Level,timestamp(),Msg]),
     gen_server:cast({global, egearmand_logger},{Level, MsgP}) .
 
 
@@ -114,6 +114,14 @@ terminate(shutdown, State) ->
 
 %% private functions
 
+
+%% @doc
+%% Timestamp generation
+timestamp() ->
+    {{Year,Month,Day},{Hour,Min,Sec}} = erlang:localtime(),
+    lists:flatten(
+      io_lib:fwrite("~2B/~2B/~4..0B ~2B:~2.10.0B:~2.10.0B",
+                    [Month, Day, Year, Hour, Min, Sec])).
 
 %% @doc
 %% Tests if Level is greater or equal than the default logging
