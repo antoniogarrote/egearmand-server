@@ -20,7 +20,7 @@
 
 
 %% @doc
-%% Creates the worker proxy fro a given worker identifier and worker socket.
+%% Creates the worker proxy from a given worker identifier and worker socket.
 start_link(Id, WorkerSocket) ->
     log:debug(["worker_proxy start_link: ",Id]),
     gen_server:start_link({global, Id}, worker_proxy, #worker_proxy_state{ identifier = Id , socket = WorkerSocket }, []) .

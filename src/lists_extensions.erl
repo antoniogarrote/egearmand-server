@@ -5,10 +5,10 @@
 
 -author("Antonio Garrote Hernandez") .
 
--include_lib("eunit/include/eunit.hrl").
+-include_lib("eunit/include/eunit.hrl") .
 
--export([compact/1, unique/1, splice/2, eachWithIndex/2, eachWithIndexP/2, interleave/1, mapWithIndex/2, detect/2, update_and_detect/2]).
-
+-export([compact/1, unique/1, splice/2, eachWithIndex/2, eachWithIndexP/2, interleave/1, mapWithIndex/2, detect/2]) .
+-export([index/2, update_and_detect/2]) .
 
 %% @doc
 %% Remove undefined occurences from a list.
@@ -138,6 +138,16 @@ update_and_detect(P, [H | R], {not_found, Acum} ) ->
     end .
 
 
+%% @doc
+%% Returns the index of an Element in a List
+-spec(index(any(), [any()]) -> integer()) .
+
+index(Element, List)                  -> index(Element, List, 1) .
+index(_Element, [], _Index)           -> not_found ;
+index(Element, [Element | _T], Index) -> Index ;
+index(Element, [_H | T], Index)       -> index(Element, T, (Index + 1)) .
+
+
 %% tests
 
 update_and_detect_test() ->
@@ -151,3 +161,12 @@ update_and_detect_test() ->
 detect_test() ->
     ?assertEqual({ok, 2}, detect(fun(X) -> X =:= 2 end, [1,2,3,4])),
     ?assertEqual({error, not_found}, detect(fun(X) -> X =:= 8 end, [1,2,3,4])) .
+
+
+index_test() ->
+    ?assertEqual(index(test,[1,2,test,4,t]), 3),
+    ?assertEqual(index(test,[1,2]), not_found),
+    ?assertEqual(index(test,[]), not_found),
+    ?assertEqual(index(test,[test]), 1),
+    ?assertEqual(index(test,[test,2]), 1),
+    ?assertEqual(index(test,[1,2,test]), 3) .
