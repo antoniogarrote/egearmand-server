@@ -40,5 +40,4 @@ $rake
 
 === running
 
-$erl -pa ebin -pa contrib
->gearmand:start("localhost",4730) .
+./egearmand [-host host] [-port port] [-log path] [-level (debug | info | warning | error)]

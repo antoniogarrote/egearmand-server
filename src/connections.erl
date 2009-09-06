@@ -53,7 +53,6 @@ handle_call({check_worker_proxy, Ref, Socket}, _From, #connections_state{ worker
         true ->
             {reply, Ref, State} ;
         false ->
-            log:t(["pre linking", Ref, Socket]) ,
             worker_proxy:start_link(Ref, Socket),
             {reply, Ref, State#connections_state{ worker_proxies = [Ref | Ws] }}
     end .
@@ -77,7 +76,7 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
             server_socket_process(ServerSocket,ConnectionsServer) ;
 
         {error, Reason} ->
-            log:t(["Error",Reason])
+            log:error(["connections server_socket_process",Reason])
     end .
 
 
@@ -89,20 +88,20 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
 
 process_connection(ClientSocket) ->
     {ok, Bin} = do_recv(ClientSocket),
-    log:t(["Received from client",Bin]),
+    log:debug(["connections process_connection : Received from client",Bin]),
     % this thread will process the request and notify us with the message
     Msgs = protocol:process_request(Bin, []),
-    log:t(["MSGS IN QUEUE ",Msgs]),
+    log:debug(["connections process_connection : msgs in queue ",Msgs]),
     lists:foreach(fun(Msg) ->
                           case check_extensions(Msg) of
                               %% No extension registered, just follow common gearman flow
                               {error, not_found} ->
-                                  log:t(["No extension for", Msg]),
+                                  log:debug(["connections process_connection : No extension for", Msg]),
                                   process_connection(Msg, ClientSocket) ;
                               %% There is an extension registered for this message.
                               %% We pass the control to the extension
                               {ok, Extension} ->
-                                  log:t(["Extension for", Msg]),
+                                  log:info(["connections process_connection : Loading extension", Extension]),
                                   apply_extension(Extension, Msg, ClientSocket)
                           end
                   end,
@@ -118,31 +117,27 @@ process_connection(Msg, ClientSocket) ->
 
     case Msg of
         {set_client_id, []} ->
-            log:t(["LLega set_client_id",[]]),
-            log:t([2,inet:peername(ClientSocket)]),
+            log:debug(["connections process_connection : set_client_id",[]]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, set_client_id, none) ;
 
         {set_client_id, Identifier} ->
-            log:t(["LLega set_client_id",Identifier]),
-            log:t([3,inet:peername(ClientSocket)]),
+            log:debug(["connections process_connection : set_client_id",Identifier]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, set_client_id, Identifier) ;
 
         {can_do, FunctionName} ->
-            log:t(["LLega can_do",FunctionName]),
-            log:t([4,inet:peername(ClientSocket)]),
+            log:debug(["connections process_connection : can_do",FunctionName]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, can_do, FunctionName) ;
 
         {grab_job, none} ->
-            log:t(["LLega grab_job"]),
-            log:t([5,inet:peername(ClientSocket)]),
+            log:debug(["connections process_connection : grab_job"]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, grab_job, none) ;
 
         {echo_req, Opaque} ->
-            log:t("LLega echo_req"),
+            log:debug("connections process_connection : echo_req"),
             gen_tcp:send(ClientSocket, protocol:pack_response(echo_res, {Opaque})) ;
 
         {submit_job, [FunctionName | Arguments]} ->
@@ -164,20 +159,17 @@ process_connection(Msg, ClientSocket) ->
             process_job_bg(low, FunctionName, Arguments, ClientSocket) ;
 
         Other ->
-            log:t(["LLega unknown",Other])
+            log:debug(["connections process_connection : unknown",Other])
     end  .
 
 
 %% doc
 %% Common logic for dispatching background jobs of different priority level
 process_job_bg(Level, FunctionName, Arguments, ClientSocket) ->
-    log:t(["LLega submit_job_bg", Level, FunctionName, Arguments]),
     {ok, Handle} = jobs_queue_server:submit_job(FunctionName, Arguments, no_socket, Level),
     Response = protocol:pack_response(job_created, {Handle}),
-    log:t(["Sending job_created",Response]),
     gen_tcp:send(ClientSocket, Response),
     WorkerProxies = functions_registry:workers_for_function(FunctionName),
-    log:t(["Found Server for Function:", length(WorkerProxies)]),
     lists:foreach(fun(WorkerProxy) ->
                           spawn(fun() -> worker_proxy:cast_gearman_message(WorkerProxy, noop, []) end)
                   end,
@@ -186,13 +178,10 @@ process_job_bg(Level, FunctionName, Arguments, ClientSocket) ->
 %% doc
 %% Common logic for dispatching jobs of different priority level
 process_job(Level, FunctionName, Arguments, ClientSocket) ->
-    log:t(["LLega submit_job", Level, FunctionName, Arguments]),
     {ok, Handle} = jobs_queue_server:submit_job(FunctionName, Arguments, ClientSocket, Level),
     Response = protocol:pack_response(job_created, {Handle}),
-    log:t(["Sending job_created",Response]),
     gen_tcp:send(ClientSocket, Response),
     WorkerProxies = functions_registry:workers_for_function(FunctionName),
-    log:t(["Found Server for Function:", length(WorkerProxies)]),
     lists:foreach(fun(WorkerProxy) ->
                           spawn(fun() -> worker_proxy:cast_gearman_message(WorkerProxy, noop, []) end)
                   end,
@@ -231,8 +220,7 @@ do_recv(Sock) ->
 %% this connection
 check_extensions(Msg) ->
     lists_extensions:detect(fun(Elem) ->
-                                    log:t(["Let's check extension for",Elem, Msg]),
-                                    log:t(erlang:apply(Elem, connection_hook_for, [Msg]))
+                                    erlang:apply(Elem, connection_hook_for, [Msg])
                             end,
                             configuration:extensions()) .
 

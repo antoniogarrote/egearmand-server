@@ -9,7 +9,7 @@
 
 -import(io).
 
--export([t/1,p/1,error/1, info/1, warning/1, debug/1]).
+-export([t/1,p/1,error/1, info/1, warning/1, debug/1, ot/1]).
 -export([start_link/1, msg/2]).
 -export([init/1, handle_cast/2]).
 
@@ -36,7 +36,6 @@ ot(Msg) ->
 -spec(t(any()) -> any()) .
 
 t(Msg) ->
-    debug(Msg),
     Msg .
 
 
