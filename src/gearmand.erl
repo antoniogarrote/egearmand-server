@@ -38,7 +38,7 @@ cmd_start() ->
 
 
 %% Version of the server.
-version() -> "0.5" .
+version() -> "0.5.1" .
 
 
 gearmand_default_values() ->
