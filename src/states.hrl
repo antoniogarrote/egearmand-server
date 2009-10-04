@@ -16,6 +16,7 @@
 -record(worker_proxy_state,{ identifier :: binary(),
                              functions = [] :: [binary()],
                              socket :: gen_tcp:socket(),
+                             worker_id :: binary(),
                              current = none :: #job_request{} | none }) .
 
 -record(function_register, { table_key :: {atom(), atom()},

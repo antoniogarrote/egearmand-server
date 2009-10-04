@@ -57,8 +57,10 @@ handle_call({unregister, Ref, FunctionName}, _From, _Store) ->
     {reply, ok, mnesia_store:delete({FunctionName, Ref}, function_register)} ;
 
 handle_call({workers_for, FunctionName}, _From, _Store) ->
+    log:debug(["Looking workers for function",FunctionName]),
     Registers = mnesia_store:all(fun(X) -> X#function_register.function_name == FunctionName end, function_register),
     Workers = lists:map(fun(FR) -> FR#function_register.reference end, Registers),
+    log:debug(["Found number of workers:",length(Workers)]),
     {reply, Workers, function_register} .
 
 

@@ -60,7 +60,7 @@ init(#worker_proxy_state{ identifier = Id, socket = WorkerSocket} = State) ->
 
 handle_call({set_client_id, Identifier}, _From, State) ->
     case Identifier =:= none of
-        false -> {reply, ok, State#worker_proxy_state{identifier = Identifier}} ;
+        false -> {reply, ok, State#worker_proxy_state{worker_id = Identifier}} ;
         true  -> {reply, ok, State }
     end ;
 
@@ -161,6 +161,7 @@ handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state
 
 
 handle_cast({noop, []}, #worker_proxy_state{ socket = WorkerSocket } = State) ->
+    log:debug(["Sending NOOP at",State]),
     Request = protocol:pack_response(noop,{}),
     gen_tcp:send(WorkerSocket, Request),
     {noreply, State} .
@@ -264,7 +265,7 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
                                               {work_exception, [JobIdentifier, Reason]} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_exception, [JobIdentifier, Reason]) ;
 
-                                              {work_fail, [JobIdentifier]} ->
+                                              {work_fail, JobIdentifier} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_fail, [JobIdentifier]);
 
                                               reset_abilities ->

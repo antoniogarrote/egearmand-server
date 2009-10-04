@@ -1,3 +1,9 @@
+=== version 0.5.1 (04/10/2009)
+
+- fixed version in egearmand.app
+- fixed error with set_id requests for the workers
+- fixed error with work_fail rqeuests from the workers
+
 === version 0.5 (09/06/2009)
 
 - OTP compliant application: supervisors, .app file, etc.
