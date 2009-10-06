@@ -5,7 +5,10 @@
 
 -author("Antonio Garrote Hernandez") .
 
+-behaviour(gen_server) .
+
 -export([start/2, cmd_start/0, version/0]) .
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([show_version/0, show_help/0]) .
 
 %% @doc
@@ -19,14 +22,40 @@ start(Host, Port, Args) ->
     log:info("starting mnesia backend store"),
     mnesia_store:start(),
     log:info("starting functions_registry"),
-    functions_registry:start_link(),
+    {ok, Pid1} = functions_registry:start_link(),
     log:info("starting jobs_queue_server"),
-    jobs_queue_server:start_link(),
+    {ok, Pid2} = jobs_queue_server:start_link(),
+    log:info("starting administration server"),
+    {ok, Pid3} = administration:start_link(),
     log:info("loading extensions"),
     lists:foreach(fun(E) -> erlang:apply(E,start,[]) end,
                   configuration:extensions()),
     log:info("starts receiving incoming connections"),
-    connections:start_link(Host,Port) .
+    {ok, Pid4} = connections:start_link(Host,Port),
+    gen_server:start_link({local, non_otp_egearmand_controller}, gearmand, [Pid1,Pid2,Pid3,Pid4], []).
+
+
+%% Callbacks
+
+init(State) ->
+    {ok, State} .
+
+handle_call(_Msg, _From, State) ->
+    {noreply, State} .
+
+handle_cast(quit, State) ->
+    lists:foreach(fun(Pid) -> exit(Pid, shutdown) end,State),
+    exit(shutdown),
+    {noreply, State} .
+
+handle_info(_Msg, State) ->
+    {noreply, State}.
+
+terminate(shutdown, State) ->
+    ok.
+
+
+%% auxiliary functions
 
 
 %% Starts the server at the given Host and Port.
@@ -38,7 +67,7 @@ cmd_start() ->
 
 
 %% Version of the server.
-version() -> "0.5.1" .
+version() -> "0.6.0" .
 
 
 gearmand_default_values() ->

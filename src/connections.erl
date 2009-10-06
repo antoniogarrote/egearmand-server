@@ -172,6 +172,19 @@ process_connection(Msg, ClientSocket) ->
         {submit_job_low_bg, [FunctionName | Arguments]} ->
             process_job_bg(low, FunctionName, Arguments, ClientSocket) ;
 
+        %% administrative requests
+        {status, none} ->
+            gen_tcp:send(ClientSocket, administration:status()) ;
+
+        {version, none} ->
+            gen_tcp:send(ClientSocket, gearmand:version()) ;
+
+        {shutdown, none} ->
+            log:info("shutdown requested"),
+            % @todo
+            gen_tcp:close(ClientSocket),
+            gen_server:cast(non_otp_egearmand_controller, quit) ;
+
         Other ->
             log:debug(["connections process_connection : unknown",Other])
     end  .

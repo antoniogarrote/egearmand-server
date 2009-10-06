@@ -30,6 +30,9 @@ init(Options) ->
                           {connections, start_link, [proplists:get_value(host, Options),
                                                      proplists:get_value(port, Options)]},
                           permanent, 5000, worker, [connections]},
+    AdministrationServer = {administration,
+                          {administration, start_link, []},
+                          permanent, 5000, worker, [administration]},
     %% supervisor specification
     {ok,{{one_for_all,1,1}, 
-         [LoggerServer, FunctionsRegistry, JobsQueueServer, ConnectionsServer]}}.
+         [LoggerServer, FunctionsRegistry, JobsQueueServer, ConnectionsServer, AdministrationServer]}}.

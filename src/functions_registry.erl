@@ -61,8 +61,11 @@ handle_call({workers_for, FunctionName}, _From, _Store) ->
     Registers = mnesia_store:all(fun(X) -> X#function_register.function_name == FunctionName end, function_register),
     Workers = lists:map(fun(FR) -> FR#function_register.reference end, Registers),
     log:debug(["Found number of workers:",length(Workers)]),
-    {reply, Workers, function_register} .
+    {reply, Workers, function_register} ;
 
+handle_call({status}, _From, _Store) ->
+    %% recover data here
+    {reply, [], function_register} .
 
 %% dummy callbacks so no warning are shown at compile time
 handle_cast(_Msg, State) ->

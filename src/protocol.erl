@@ -11,6 +11,15 @@
 %% @author 'Samuel Stauffer <samuel@lefora.com>'
 %% @see git://github.com/samuel/erlang-gearman.git
 -spec(parse_command/1 :: (Data :: binary()) -> {'error', 'not_enough_data'} | {'ok', binary(), atom(), atom()} | {'ok', binary(), atom(), tuple()}).
+parse_command(<<"status", Rest/binary>>) ->
+    {ok, <<>>, administrative, status} ;
+
+parse_command(<<"shutdown", Rest/binary>>) ->
+    {ok, <<>>, administrative, shutdown} ;
+
+parse_command(<<"version", Rest/binary>>) ->
+    {ok, <<>>, administrative, version} ;
+
 parse_command(Data) when size(Data) >= 12 ->
     <<"\000RE", TypeChar:8, CommandID:32/big, DataLength:32/big, Rest/binary>> = Data,
     if
