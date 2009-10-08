@@ -6,17 +6,17 @@ notfound=true
 for i in ${args[@]}; do
     if [[ $i == "-version" ]] ; then
         notfound=false
-        erl -noshell -pa ebin -pa contrib -run gearmand show_version -s init stop;
+        erl -noshell -pa ebin -pa contrib -run egearmand_app show_version -s init stop;
     else
         for i in ${args[@]}; do
             if [[ $i == "-help" ]] ; then
                 notfound=false
-                erl -noshell -pa ebin -pa contrib -run gearmand show_help -s init stop;
+                erl -noshell -pa ebin -pa contrib -run egearmand_app show_help -s init stop;
             fi
         done
     fi
 done
 
 if $notfound ; then
-    erl -noshell -pa ebin -pa contrib -run gearmand cmd_start $@
+    erl -noshell -pa ebin -pa contrib -run egearmand_app cmd_start $@
 fi

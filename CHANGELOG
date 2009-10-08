@@ -1,3 +1,7 @@
+=== version 0.6.1 (08/10/2009)
+
+- unified boot of the server as an OTP application, also from the egearmand script
+
 === version 0.6.0 (06/10/2009)
 
 - initial support for the administrative protocol: status, version and shutdown commands

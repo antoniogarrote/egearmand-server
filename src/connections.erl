@@ -177,13 +177,14 @@ process_connection(Msg, ClientSocket) ->
             gen_tcp:send(ClientSocket, administration:status()) ;
 
         {version, none} ->
-            gen_tcp:send(ClientSocket, gearmand:version()) ;
+            gen_tcp:send(ClientSocket, egearmand_app:version()) ;
 
         {shutdown, none} ->
             log:info("shutdown requested"),
             % @todo
             gen_tcp:close(ClientSocket),
-            gen_server:cast(non_otp_egearmand_controller, quit) ;
+            %gen_server:cast(non_otp_egearmand_controller, quit) ;
+            application:stop(egearmand) ;
 
         Other ->
             log:debug(["connections process_connection : unknown",Other])

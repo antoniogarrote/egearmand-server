@@ -1,6 +1,6 @@
 {application,egearmand,
  [{description,"gearman server"},
-  {vsn,"0.6.0"},
+  {vsn,"0.6.1"},
   {modules,[client_proxy, configuration, connections, functions_registry, gearmand, gearmand_supervisor,
             jobs_queue_server, lists_extensions, log, mnesia_store, poplists_extensions, protocol, rabbit_backend,
             rabbitmq_extension, store, tests, worker_proxy, administration]},
@@ -9,4 +9,5 @@
   {mod,{egearmand_app,[ {host, "localhost"},
                         {port, 4730},
                         {level, info},
-                        {method, stdout} ]}}]}.
+                        {method, file},
+                        {path, "egearmand.log"} ]}}]}.

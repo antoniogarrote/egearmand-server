@@ -11,7 +11,8 @@ erlang-rfc4627 (included in the contrib directory)
 
 === OTP application support
 
-The server can be started as an OTP application, try.
+The application always start as an OTP application using the egearmand script , you can
+start the shell with:
 > application:start(egearmand) .
 You can change the configuration of the application editing the
 file ebin/egearmand.app, editing the host, port, and log mechanism.
@@ -24,7 +25,7 @@ RabbitMQ queue system is included. To use the extension, be sure
 you have erlang-rfc4627 in the path and before calling to
 gearmand:start(), invoke rabbitmq_extension:start() from the
 erlang shell.
-There are examples in the /examples direcytory  of three ruby
+There are examples in the /examples direcTory  Of three ruby
 scripts creating, publishing and consuming messages from a queue
 through the egearmand server.
 
@@ -36,8 +37,14 @@ To run all the tests, starts the erlang shell with the loaded code of the server
 
 === configuration
 
-By now in file src/configuration.erl. Take a look at the comments.
+The default configuration: host, port, log level and log file can be configured in the egearmand.app
+application specification file or can be provided as options to the egearmand boot script.
+
+Other configuration options regarding persisten queues and extension can only we configured editing the
+file src/configuration.erl. Take a look at the comments.
+
 It must be edited before compiling.
+
 If you want to use persistent queues, you must create the replicated Mnesia schema before calling to gearmand:start().
 You can use mnesia_store:create_tables(), after initiating calling to mnesia:create_schema(configuration:gearmand_nodes()).
 
