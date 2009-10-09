@@ -20,6 +20,9 @@ init(Options) ->
     LoggerServer = {log,
                     {log, start_link, [Options]},
                     permanent, 5000, worker, [log]},
+    WorkersRegistry = {workers_registry,
+                       {workers_registry, start_link, []},
+                       permanent, 5000, worker, [workers_registry]},
     FunctionsRegistry = {functions_registry,
                          {functions_registry, start_link, []},
                          permanent, 5000, worker, [functions_registry]},
@@ -35,4 +38,4 @@ init(Options) ->
                           permanent, 5000, worker, [administration]},
     %% supervisor specification
     {ok,{{one_for_all,1,1}, 
-         [LoggerServer, FunctionsRegistry, JobsQueueServer, ConnectionsServer, AdministrationServer]}}.
+         [LoggerServer, WorkersRegistry, FunctionsRegistry, JobsQueueServer, ConnectionsServer, AdministrationServer]}}.

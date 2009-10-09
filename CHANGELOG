@@ -1,3 +1,8 @@
+=== version 0.6.2 (09/10/2009)
+
+- added global register of worker proxies in order to finish implementation of
+  the administrative protocol and clean shutdown of the server.
+
 === version 0.6.1 (08/10/2009)
 
 - unified boot of the server as an OTP application, also from the egearmand script

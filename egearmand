@@ -19,4 +19,5 @@ done
 
 if $notfound ; then
     erl -noshell -pa ebin -pa contrib -run egearmand_app cmd_start $@
+#    erl -pa ebin -pa contrib -run egearmand_app cmd_start $@
 fi

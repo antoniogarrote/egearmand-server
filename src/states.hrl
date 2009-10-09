@@ -13,6 +13,9 @@
                        options = [] :: {[binary()]},
                        client_socket_id :: atom() }) .
 
+-record(worker_proxy_info, { identifier :: binary(),
+                             current :: #job_request{} | none }) .
+
 -record(worker_proxy_state,{ identifier :: binary(),
                              functions = [] :: [binary()],
                              socket :: gen_tcp:socket(),

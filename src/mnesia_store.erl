@@ -49,10 +49,15 @@ create_tables() ->
                             true -> [{disc_copies, configuration:backup_gearmand_nodes()}];
                             false -> []
                         end,
+    mnesia:create_table(worker_proxy_info, [{ram_copies, configuration:gearmand_nodes()},
+                                            {type, ordered_set},
+                                            {attributes, record_info(fields,worker_proxy_info)}] ++ PersistenceCopies),
+
     mnesia:create_table(job_request, [{index, [#job_request.queue_key]},
                                       {ram_copies, configuration:gearmand_nodes()},
                                       {type, ordered_set},
                                       {attributes, record_info(fields,job_request)}] ++ PersistenceCopies),
+
     mnesia:create_table(function_register, [{index, [#function_register.function_name]},
                                             {ram_copies, configuration:gearmand_nodes()},
                                             {type, ordered_set},
@@ -63,7 +68,7 @@ create_tables() ->
 %% Waits until the tables are loaded and ready to use. This function blocks
 %% undefinitely.
 load_tables() ->
-    mnesia:wait_for_tables([job_request, function_register], infinity).
+    mnesia:wait_for_tables([worker_proxy_info, job_request, function_register], infinity).
 
 
 %% @doc

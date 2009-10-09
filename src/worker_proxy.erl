@@ -95,6 +95,8 @@ handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, 
         #job_request{identifier = Identifier, function = FunctionName, opaque_data = Opaque} ->
             Request = protocol:pack_response(job_assign, {Identifier, FunctionName, Opaque}),
             gen_tcp:send(WorkerSocket,Request),
+            log:debug(["About to set the current job for worker proxy", Identifier, Job]),
+            workers_registry:update_worker_current(Identifier, Job),
             {reply, ok, State#worker_proxy_state{current = Job}}
     end ;
 
@@ -131,7 +133,8 @@ handle_call({work_warning, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_st
     end,
     {reply, ok, State} ;
 
-handle_call({work_exception, [JobIdentifier, Reason]}, _From, #worker_proxy_state{ current = Job } = State) ->
+handle_call({work_exception, [JobIdentifier, Reason]}, _From, #worker_proxy_state{ identifier = Identifier, current = Job } = State) ->
+    workers_registry:update_worker_current(Identifier, none),
     ExceptionsEnabled = jobs_queue_server:check_option_for_job(<<"exceptions">>, Job),
     if
         (Job#job_request.client_socket_id =/= no_socket) and ExceptionsEnabled ->
@@ -141,7 +144,8 @@ handle_call({work_exception, [JobIdentifier, Reason]}, _From, #worker_proxy_stat
     end,
     {reply, ok, State} ;
 
-handle_call({work_fail, [JobIdentifier]}, _From, #worker_proxy_state{ current = Job } = State) ->
+handle_call({work_fail, [JobIdentifier]}, _From, #worker_proxy_state{ identifier = Identifier, current = Job } = State) ->
+    workers_registry:update_worker_current(Identifier, none),
     if
         Job#job_request.client_socket_id =/= no_socket ->
             Response = protocol:pack_response(work_fail, {JobIdentifier}),
@@ -150,7 +154,9 @@ handle_call({work_fail, [JobIdentifier]}, _From, #worker_proxy_state{ current = 
     end,
     {reply, ok, State#worker_proxy_state{ current = none }} ;
 
-handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state{ current = Job } = State) ->
+handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state{ identifier = Identifier, current = Job } = State) ->
+    log:debug(["About to set the current job to none due to work complete", Identifier, Job]),
+    workers_registry:update_worker_current(Identifier, none),
     if
         Job#job_request.client_socket_id =/= no_socket ->
             Response = protocol:pack_response(work_complete, {JobIdentifier, Result}),
@@ -163,7 +169,9 @@ handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state
 handle_cast({noop, []}, #worker_proxy_state{ socket = WorkerSocket } = State) ->
     log:debug(["Sending NOOP at",State]),
     Request = protocol:pack_response(noop,{}),
+    log:debug(["NOOP Packaged as",binary_to_list(Request)]),
     gen_tcp:send(WorkerSocket, Request),
+    log:debug(["NOOP Sent"]),
     {noreply, State} .
 
 
@@ -171,7 +179,10 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 
-terminate(shutdown, State) ->
+terminate(shutdown, #worker_proxy_state{identifier = Identifier, socket = WorkerSocket} = State) ->
+    gen_tcp:close(WorkerSocket),
+    log:debug(["About to shutdown worker proxy connection", Identifier]),
+    workers_registry:unregister_worker_proxy(Identifier),
     ok.
 
 
@@ -224,7 +235,12 @@ do_remove_function(FunctionName, [Other | Rest], Acum) ->
 
 
 worker_process_connection(ProxyIdentifier, WorkerSocket) ->
-    log:debug("worker_proxy worke_process_connection"),
+    log:debug(["worker_proxy worker_process_connection", ProxyIdentifier]),
+
+    workers_registry:register_worker_proxy(#worker_proxy_info{identifier = ProxyIdentifier, current = none}),
+
+    log:debug(["worker_proxy registered", ProxyIdentifier]),
+
     Read = connections:do_recv(WorkerSocket),
     case Read of
 
@@ -291,6 +307,7 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
         Error ->
 
             % log for now
+            % @todo Notify to proxy, empty queues and finish execution of the server
             log:error(["worker_proxy worker_proxy_connection : Error in worker proxy", Error])
     end .
 
