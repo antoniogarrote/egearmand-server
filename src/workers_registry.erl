@@ -11,8 +11,8 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
--export([start_link/0, register_worker_proxy/1, unregister_worker_proxy/1, update_worker_current/2]) .
-
+-export([start_link/0, register_worker_proxy/1, unregister_worker_proxy/1, update_worker_current/2, worker_functions/0]) .
+-export([add_worker_function/2, remove_worker_function/2, update_worker_id/2]).
 
 %% Public API
 
@@ -41,6 +41,30 @@ unregister_worker_proxy(ProxyIdentifier) ->
 update_worker_current(ProxyIdentifier, CurrentFunction) ->
     gen_server:cast({global,workers_registry},{update_current, ProxyIdentifier, CurrentFunction}) .
 
+%% @doc
+%% Sets the client id info of a certain worker.
+update_worker_id(ProxyIdentifier, Id) ->
+    gen_server:cast({global,workers_registry},{update_worker_id, ProxyIdentifier, Id}) .
+
+
+%% @doc
+%% Adds an additional function to the supported functions of a workers.
+add_worker_function(ProxyIdentifier, Function) ->
+    log:debug(["workers_registry add_worker_function", ProxyIdentifier, Function]),
+    gen_server:cast({global,workers_registry},{add_worker_function, ProxyIdentifier, Function}) .
+
+
+%% @doc
+%% Removes an additional function to the supported functions of a workers.
+remove_worker_function(ProxyIdentifier, Function) ->
+    gen_server:cast({global,workers_registry},{remove_worker_function, ProxyIdentifier, Function}) .
+
+
+%% @doc
+%% Retuns all the registered workers at a certain moment
+worker_functions() ->
+    gen_server:call({global,workers_registry},{worker_functions}) .
+
 
 %% Callbacks
 
@@ -54,18 +78,56 @@ handle_call({register, WorkerProxyInfo}, _From, _Store) ->
                                     worker_proxy_info)} ;
 
 handle_call({unregister, ProxyIdentifier}, _From, _Store) ->
-    {reply, ok, mnesia_store:delete(ProxyIdentifier, worker_proxy_info)} .
+    {reply, ok, mnesia_store:delete(ProxyIdentifier, worker_proxy_info)} ;
+
+handle_call({worker_functions}, _From, Store) ->
+    ProxyInfos = mnesia_store:all(worker_proxy_info),
+    FilteredInfos = lists:filter(fun(#worker_proxy_info{current = Job}) -> Job =/= none end, ProxyInfos),
+    Functions = lists:map(fun(#worker_proxy_info{current = C}) -> C#job_request.function end,FilteredInfos),
+    {reply, Functions, Store}.
 
 
-%% dummy callbacks so no warning are shown at compile time
 handle_cast({update_current, ProxyIdentifier, Current}, State) ->
     mnesia_store:update(fun(OldState) -> OldState#worker_proxy_info{ current = Current } end,
                         ProxyIdentifier,
                         worker_proxy_info),
+    {noreply, State} ;
+
+handle_cast({update_worker_id, ProxyIdentifier, Id}, State) ->
+    log:debug([ProxyIdentifier, "Updating worker ID", Id]),
+    mnesia_store:update(fun(OldState) -> OldState#worker_proxy_info{ worker_id = Id } end,
+                        ProxyIdentifier,
+                        worker_proxy_info),
+    {noreply, State} ;
+
+handle_cast({add_worker_function, ProxyIdentifier, Function}, State) ->
+    mnesia_store:update(fun(#worker_proxy_info{ functions = Fs } = OldState) -> OldState#worker_proxy_info{ functions = add_function(Function, Fs, []) } end,
+                        ProxyIdentifier,
+                        worker_proxy_info),
+    {noreply, State} ;
+
+handle_cast({remove_worker_function, ProxyIdentifier, Function}, State) ->
+    mnesia_store:update(fun(#worker_proxy_info{ functions = Fs } = OldState) -> OldState#worker_proxy_info{ functions = remove_function(Function, Fs, []) } end,
+                        ProxyIdentifier,
+                        worker_proxy_info),
     {noreply, State} .
 
+%% dummy callbacks so no warning are shown at compile time
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-terminate(shutdown, State) ->
+
+terminate(shutdown, _State) ->
     ok.
+
+
+%% private functions
+
+add_function(F,[], Acum) -> [F | Acum] ;
+add_function(F, [F | Fs], Acum) -> [F | Fs] ++ Acum ;
+add_function(F, [Fp | Fs], Acum) -> add_function(F, Fs, [Fp | Acum]) .
+
+
+remove_function(_F,[], Acum) -> Acum ;
+remove_function(F, [F | Fs], Acum) -> Fs ++ Acum ;
+remove_function(F, [Fp | Fs], Acum) -> remove_function(F, Fs, [Fp | Acum]) .

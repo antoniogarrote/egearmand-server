@@ -1,3 +1,7 @@
+=== version 0.6.3 (10/10/2009)
+
+- full administrative protocol implemented: workers, status, shutdown, version, maxqueue
+
 === version 0.6.2 (09/10/2009)
 
 - added global register of worker proxies in order to finish implementation of

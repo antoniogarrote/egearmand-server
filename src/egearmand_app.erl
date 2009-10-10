@@ -4,7 +4,7 @@
 
 -behaviour(application) .
 
--export([start/2, stop/1, show_version/0, show_help/0, cmd_start/0]) .
+-export([start/2, stop/1, show_version/0, show_help/0, cmd_start/0, version/0]) .
 
 start(_Type, Arguments) ->
     ParsedArguments = cmd_line_options(Arguments,[host, port, log, level]),
@@ -65,7 +65,7 @@ process_value(Flag, Value, Acum) ->
     end .
 
 show_version() ->
-    io:format("egearmand version ~p~n", [version()]) .
+    io:format("egearmand version ~s~n", [version()]) .
 
 show_help() ->
     io:format("egearmand version ~p~n use: egearmand [-host host] [-port port] [-log path] [-level (debug | info | warning | error)]~n", [version()]) .

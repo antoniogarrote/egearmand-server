@@ -1,8 +1,8 @@
 -module(administration) .
 
 %% @doc
-%% A registry of all the functions in the server
-%% and the workers associated to each function.
+%% A server handling some requests from the administrative
+%% protocol of Gearman.
 
 -author("Antonio Garrote Hernandez") .
 
@@ -12,7 +12,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
--export([start_link/0, status/0]) .
+-export([start_link/0, status/0, workers/0, version/0]) .
 
 
 %% Public API
@@ -25,10 +25,21 @@ start_link() ->
 
 
 %% @doc
-%% Retrieves de admin data for the status of the server
+%% Retrieves admin data for the status of the server
 status() ->
     gen_server:call(administration, {status}) .
 
+
+%% @doc
+%% Retrives admin data for the workers registered in the server
+workers() ->
+    gen_server:call(administration, {workers}) .
+
+
+%% @doc
+%% Retrieves the version of the server
+version() ->
+    egearmand_app:version().
 
 %% Callbacks
 
@@ -42,9 +53,22 @@ handle_call({status}, _From, State) ->
     CountedFunctions = count_functions(Functions, []),
     Queues = mnesia_store:all(job_request),
     CountedFunctionsQueue = add_queues(CountedFunctions, Queues, []),
-    StrFs = lists:map(fun({N,Q,C}) -> 
-                              lists:flatten(io_lib:format("~s" ++ [$\t] ++"~p"++ [$\t] ++"~p"++ [$\t] ++"~p",[N,Q,0,C])) end,
-                      CountedFunctionsQueue),
+    AllDataFunctions = add_current_info(CountedFunctionsQueue, workers_registry:worker_functions()),
+    StrFs = lists:map(fun({N,Q,Cr,C}) ->
+                              lists:flatten(io_lib:format("~s" ++ [$\t] ++"~p"++ [$\t] ++"~p"++ [$\t] ++"~p",[N,Q,Cr,C])) end,
+                      AllDataFunctions),
+    Res = lists:foldl(fun(X,Acum) -> Acum ++ X ++ "\n" end, "", StrFs),
+    {reply, Res ++ ".", State} ;
+
+handle_call({workers}, _From, State) ->
+    Workers = mnesia_store:all(worker_proxy_info),
+    log:debug(["READ WORKERS: ",Workers]),
+    StrFs = lists:map(fun(#worker_proxy_info{identifier = Id, ip= {N1,N2,N3,N4}, worker_id=WorkerId, functions = Fs}) ->
+                              log:debug(["Let's fold: ", Fs]),
+                              StrFunctions = lists:foldl(fun(F,Acum) -> F ++ " " ++ Acum end, "", Fs),
+                              lists:flatten(io_lib:format("0 ~p.~p.~p.~p ~s : ",[N1,N2,N3,N4,WorkerId])) ++ StrFunctions
+                      end,
+                      Workers),
     Res = lists:foldl(fun(X,Acum) -> Acum ++ X ++ "\n" end, "", StrFs),
     {reply, Res ++ ".", State} .
 
@@ -87,9 +111,23 @@ add_queues([R | Rs], Qs, Acum) ->
     add_queues(Rs, Qs, [update_function_queues(R,Qs) | Acum]) .
 
 update_function_queues({Name,C}, Qs) ->
-    {Name, length(lists:filter(fun(X) -> X#job_request.function =:= Name end, Qs)), C} .
+    {Name, length(lists:filter(fun(X) -> X#job_request.function =:= Name end, Qs)), 0, C} .
+
+add_current_info(Ds, []) -> Ds ;
+add_current_info(Ds, [F | Fs]) ->
+    add_current_info(update_current_info(F,Ds,[]), Fs) .
+
+update_current_info(_F, [], Acum) -> Acum ;
+
+update_current_info(F, [{F,Q,Cr,C},Ds],Acum) ->
+    update_current_info(F, Ds, [{F,Q,(Cr+1),C} | Acum]) ;
+
+update_current_info(F, [D | Ds], Acum) ->
+    update_current_info(F, Ds, [D | Acum]) .
+
 
 %% tests
+
 
 update_function_queues_test() ->
     R = {"test", 1},

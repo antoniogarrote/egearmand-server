@@ -3,6 +3,12 @@
 An experimental Gearmand distributed server written in Erlang with all the things Gearman should not have: replicated persistent queues,
 incipient error recovery and support for clustering.
 
+=== State of the implementation
+
+You can take a look at the CHANGELOG file to see the state of the implementation of the Gearman protocol.
+At this moment, the binary and administrative protocol are fully implemented.
+The server has been tested with the java and ruby Gearman client libraries using a single node configuration.
+
 === dependencies
 
 Erlang (tested with OTP R13B01),

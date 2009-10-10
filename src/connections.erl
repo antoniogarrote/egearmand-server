@@ -176,8 +176,14 @@ process_connection(Msg, ClientSocket) ->
         {status, none} ->
             gen_tcp:send(ClientSocket, administration:status()) ;
 
+        {workers, none} ->
+            gen_tcp:send(ClientSocket, administration:workers()) ;
+
         {version, none} ->
-            gen_tcp:send(ClientSocket, egearmand_app:version()) ;
+            gen_tcp:send(ClientSocket, administration:version()) ;
+
+        {maxqueue, none} ->
+            gen_tcp:send(ClientSocket, "OK") ;
 
         {shutdown, none} ->
             log:info("shutdown requested"),

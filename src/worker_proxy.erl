@@ -12,7 +12,7 @@
 -include_lib("states.hrl") .
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/2, error_in_worker/2]).
+-export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/3, error_in_worker/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 
@@ -54,27 +54,31 @@ cast_gearman_message(WorkerProxy,Msg,Arguments) ->
 init(#worker_proxy_state{ identifier = Id, socket = WorkerSocket} = State) ->
     % this thread will read from the worker connection
     % notifying the proxy with requests
-    spawn(worker_proxy, worker_process_connection, [Id, WorkerSocket]),
+    spawn(worker_proxy, worker_process_connection, [Id, WorkerSocket, true]),
     {ok, State} .
 
 
-handle_call({set_client_id, Identifier}, _From, State) ->
-    case Identifier =:= none of
-        false -> {reply, ok, State#worker_proxy_state{worker_id = Identifier}} ;
+handle_call({set_client_id, WorkerId}, _From, State) ->
+    case WorkerId =:= none of
+        false -> workers_registry:update_worker_id(State#worker_proxy_state.identifier, WorkerId),
+                 {reply, ok, State#worker_proxy_state{worker_id = WorkerId}} ;
         true  -> {reply, ok, State }
     end ;
 
 handle_call({can_do, FunctionName}, _From, #worker_proxy_state{functions = Functions, identifier = Identifier} = State) ->
     {Outcome, FunctionsP} = update_functions(FunctionName, Functions),
     case Outcome of
-        not_in_list -> enable_function(Identifier,FunctionName)
+        not_in_list -> enable_function(Identifier,FunctionName),
+                       log:debug([Identifier, "Adding workers_registry info for function ", FunctionName]),
+                       workers_registry:add_worker_function(Identifier, FunctionName)
     end,
     {reply, ok, State#worker_proxy_state{functions = FunctionsP}} ;
 
 handle_call({cant_do, FunctionName}, _From, #worker_proxy_state{functions = Functions, identifier = Identifier} = State) ->
     {Outcome, FunctionsP} = remove_function(FunctionName, Functions),
     case Outcome of
-        removed_from_list -> disable_function(Identifier,FunctionName)
+        removed_from_list -> disable_function(Identifier,FunctionName),
+                             workers_registry:remove_worker_function(Identifier, FunctionName)
     end,
     {reply, ok, State#worker_proxy_state{functions = FunctionsP}} ;
 
@@ -179,7 +183,7 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 
-terminate(shutdown, #worker_proxy_state{identifier = Identifier, socket = WorkerSocket} = State) ->
+terminate(shutdown, #worker_proxy_state{identifier = Identifier, socket = WorkerSocket}) ->
     gen_tcp:close(WorkerSocket),
     log:debug(["About to shutdown worker proxy connection", Identifier]),
     workers_registry:unregister_worker_proxy(Identifier),
@@ -234,12 +238,15 @@ do_remove_function(FunctionName, [Other | Rest], Acum) ->
     do_remove_function(FunctionName, Rest, [Other | Acum]) .
 
 
-worker_process_connection(ProxyIdentifier, WorkerSocket) ->
-    log:debug(["worker_proxy worker_process_connection", ProxyIdentifier]),
-
-    workers_registry:register_worker_proxy(#worker_proxy_info{identifier = ProxyIdentifier, current = none}),
-
-    log:debug(["worker_proxy registered", ProxyIdentifier]),
+worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
+    if
+        ShouldRegister =:= true ->
+            log:debug(["worker_proxy worker_process_connection", ProxyIdentifier]),
+            {ok, {IP, _Port}} = inet:peername(WorkerSocket),
+            workers_registry:register_worker_proxy(#worker_proxy_info{identifier = ProxyIdentifier, current = none, ip = IP}),
+            log:debug(["worker_proxy registered", ProxyIdentifier]) ;
+        true -> none
+    end,
 
     Read = connections:do_recv(WorkerSocket),
     case Read of
@@ -250,7 +257,7 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
             case Msgs of
                 {error, _DonCare} ->
                     log:error(["worker_proxy worker_proxy_connection : Error reading from worker proxy socket", Msgs]),
-                    worker_process_connection(ProxyIdentifier, WorkerSocket) ;
+                    worker_process_connection(ProxyIdentifier, WorkerSocket, false) ;
                 Msgs ->
                     % TODO: instead of foreach is better to use some recursion that can
                     %        be stopped when an error has been found.
@@ -299,7 +306,7 @@ worker_process_connection(ProxyIdentifier, WorkerSocket) ->
                                                                               end
                                                                   end, Msgs),
                     case FoundError of
-                        error -> worker_process_connection(ProxyIdentifier, WorkerSocket) ;
+                        error -> worker_process_connection(ProxyIdentifier, WorkerSocket, false) ;
                         ok    -> worker_proxy:error_in_worker(ProxyIdentifier, Error)
                     end
             end ;

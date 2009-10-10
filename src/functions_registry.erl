@@ -74,5 +74,5 @@ handle_cast(_Msg, State) ->
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-terminate(shutdown, State) ->
+terminate(shutdown, _State) ->
     ok.
