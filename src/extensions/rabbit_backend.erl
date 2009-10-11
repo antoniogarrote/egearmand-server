@@ -9,6 +9,7 @@
 -behaviour(gen_server) .
 
 -include_lib("states.hrl").
+-include_lib("rabbit_states.hrl").
 -include_lib("rabbitmq_erlang_client/include/amqp_client.hrl").
 
 -export([start/0, start_link/0]) .

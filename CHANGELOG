@@ -1,3 +1,8 @@
+=== version 0.6.4 (11/10/2009)
+
+- splitted rabbitmq extension from main code of the server. Now it is possible to build
+  the server withouth the rabbitmq extensions and its dependencies
+
 === version 0.6.3 (10/10/2009)
 
 - full administrative protocol implemented: workers, status, shutdown, version, maxqueue
