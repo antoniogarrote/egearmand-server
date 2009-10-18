@@ -60,7 +60,8 @@ on_worker_failure() ->
 %% the gearman server is going to run.
 -spec(gearmand_nodes() -> [node()]) .
 gearmand_nodes() ->
-    [node()] .
+    {ok, Nodes} = application:get_env(egearmand,nodes),
+    [node() | Nodes] .
 
 
 %% @doc

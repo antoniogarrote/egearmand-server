@@ -6,9 +6,19 @@
 
 -export([start/2, stop/1, show_version/0, show_help/0, cmd_start/0, version/0]) .
 
+
 start(_Type, Arguments) ->
-    ParsedArguments = cmd_line_options(Arguments,[host, port, log, level]),
-    gearmand_supervisor:start_link(ParsedArguments) .
+    ParsedArguments = cmd_line_options(Arguments,[host, port, log, level, check_nodes]),
+    ShouldCheckNodes = proplists:get_bool(check_nodes, ParsedArguments),
+    IsSlave = proplists:get_bool(slave, ParsedArguments),
+    if
+        ShouldCheckNodes =:= true   -> check_environment() ;
+        ShouldCheckNodes =:= false  -> if 
+                                           IsSlave =:= false -> gearmand_supervisor:start_link(ParsedArguments) ;
+                                           IsSlave =:= true  -> gearmand_slave_supervisor:start_link(ParsedArguments)
+                                       end
+    end .
+
 
 stop(_State) ->
     ok .
@@ -16,10 +26,23 @@ stop(_State) ->
 %% auxiliary functions
 
 
+%% Checks if all the nodes are up and running
+check_environment() ->
+    lists:foreach(fun(N) ->
+                          Res = net_adm:ping(N),
+                          if
+                              Res =:= pong -> error_logger:info_msg("Node ~p up~n",[N]) ;
+                              Res =:= pang -> error_logger:error_msg("Node ~p down!!!~n",[N])
+                          end
+                  end,
+                  configuration:gearmand_nodes()),
+    init:stop() .
+
+
 %% Starts the server at the given Host and Port.
 cmd_start() ->
-    application:start(mnesia),
-    application:start(egearmand) .
+        application:start(mnesia),
+        application:start(egearmand) .
 
 
 
@@ -58,11 +81,15 @@ default_values([{Default, DefaultValue} | Defaults], Acum) ->
 
 process_value(Flag, Value, Acum) ->
     case Flag of
-        host  ->  [{host, Value} | Acum] ;
-        port  ->  [{port, list_to_integer(Value)} | Acum] ;
-        log   ->  [{method, file}, {path, Value} | Acum] ;
-        level -> [{level, list_to_atom(Value)} | Acum]
+        host        ->  [{host, Value} | Acum] ;
+        port        ->  [{port, list_to_integer(Value)} | Acum] ;
+        log         ->  [{method, file}, {path, Value} | Acum] ;
+        level       ->  [{level, list_to_atom(Value)} | Acum] ;
+        check_nodes ->  [{check_nodes, list_to_boolean(Value)} | Acum]
     end .
+
+list_to_boolean("true")  -> true ;
+list_to_boolean("false") -> false .
 
 show_version() ->
     io:format("egearmand version ~s~n", [version()]) .

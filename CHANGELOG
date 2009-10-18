@@ -1,3 +1,7 @@
+=== version 0.6.5 (18/10/2009)
+
+- initial support for automatically start a cluster of gearman servers.
+
 === version 0.6.4 (11/10/2009)
 
 - splitted rabbitmq extension from main code of the server. Now it is possible to build

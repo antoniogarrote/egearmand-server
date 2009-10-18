@@ -1,12 +1,15 @@
 {application,egearmand,
  [{description,"gearman server"},
-  {vsn,"0.6.4"},
+  {vsn,"0.6.5"},
   {modules,[client_proxy, configuration, connections, functions_registry, gearmand, gearmand_supervisor,
             jobs_queue_server, lists_extensions, log, mnesia_store, poplists_extensions, protocol, mnesia_store, tests, worker_proxy, administration]},
   {registered,[inets_sup, httpc_manager]},
   {applications,[kernel,stdlib, mnesia]},
+  {env, [{nodes, []}]},
   {mod,{egearmand_app,[ {host, "localhost"},
                         {port, 4730},
                         {level, info},
                         {method, file},
-                        {path, "egearmand.log"} ]}}]}.
+                        {path, "egearmand.log"},
+                        {check_nodes, false},
+                        {slave, false}]}}]}.

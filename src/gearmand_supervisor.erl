@@ -14,8 +14,34 @@ start_link(Options) ->
 
 
 init(Options) ->
-    %% Start the database
+    %% Let's start Mnesia in all the nodes
+    lists:foreach(fun(N) ->
+                          if
+                              N =/= node() -> rpc:call(N,application,start,[mnesia]) ;
+                              true         -> application:start(mnesia)
+                          end
+                  end,
+                  configuration:gearmand_nodes()),
+
+    %% Starts the database
     mnesia_store:otp_start(),
+
+    %% Starting remote processes
+    lists:foreach(fun(N) ->
+                          if
+                              N =/= node() ->     error_logger:info_msg("Starting supervisor_slave at ~p with options ~p",[N, Options]),
+                                                  % Res = rpc:call(N,gearmand_slave_supervisor,start_link,[Options]),
+                                                  % Res = rpc:call(N,gearmand_slave_supervisor, start_supervisor, [Options]),
+                                                  % Res = spawn(N, gearmand_slave_supervisor, start_link, [Options]),
+                                                  % Res = spawn(N, gearmand_slave_supervisor, start_supervisor, [Options]),
+                                                  % Res = spawn(N, administration, start_link, []),
+                                                  Res = rpc:call(N, application, start, [egearmand]),
+                                                  error_logger:info_msg("Result has been ~p",[Res]) ;
+                              true         -> none
+                          end
+                  end,
+                  configuration:gearmand_nodes()),
+
     %% children specifications
     LoggerServer = {log,
                     {log, start_link, [Options]},

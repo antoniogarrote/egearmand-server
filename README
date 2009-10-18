@@ -80,3 +80,55 @@ $rake extensions
 
 The distribution includes some examples of clients and workers using to test the server and the RabbitMQ extension.
 The examples are coded in Ruby, and use the xing-gearman-ruby gem to work. You can obtain it from github: git://github.com/xing/gearman-ruby.git
+
+=== clustering
+
+A cluster of Egearmand servers is formed by a master node and a set of slave nodes. The file egearmand.app must be edited in the master node
+to state the node names of the slave nodes, the slave parameter in that file must be set to false. For instance:
+
+{application,egearmand,
+ [{description,"gearman server"},
+  {vsn,"0.6.5"},
+  {modules,[client_proxy, configuration, connections, functions_registry, gearmand, gearmand_supervisor,
+            jobs_queue_server, lists_extensions, log, mnesia_store, poplists_extensions, protocol, mnesia_store, tests, worker_proxy, administration]},
+  {registered,[inets_sup, httpc_manager]},
+  {applications,[kernel,stdlib, mnesia]},
+  {env, [{nodes, ['slave@laptop.local']}]},
+  {mod,{egearmand_app,[ {host, "localhost"},
+                        {port, 4730},
+                        {level, info},
+                        {method, file},
+                        {path, "egearmand.log"},
+                        {check_nodes, false},
+                        {slave, false}]}}]}.
+
+
+This .app file states that a master serve will be started in this node and that a slave node must be started in the node 'vbox@laptop.local'.
+
+In the slave node, the .app file must be edited with an empty list of nodes and the slave parameter to true:
+
+{application,egearmand,
+ [{description,"gearman server"},
+  {vsn,"0.6.5"},
+  {modules,[client_proxy, configuration, connections, functions_registry, gearmand, gearmand_supervisor,
+            jobs_queue_server, lists_extensions, log, mnesia_store, poplists_extensions, protocol, mnesia_store, tests, worker_proxy, administration]},
+  {registered,[inets_sup, httpc_manager]},
+  {applications,[kernel,stdlib, mnesia]},
+  {env, [{nodes, []}]},
+  {mod,{egearmand_app,[ {host, "localhost"},
+                        {port, 4730},
+                        {level, info},
+                        {method, file},
+                        {path, "egearmand.log"},
+                        {check_nodes, true},
+                        {slave, false}]}}]}.
+
+Now, in each machine where the slaves nodes are going to be executed, an Erlang node with the correct full name must be started:
+
+laptop$ erl -pa path/to/egearmand/ebin -name vbox@laptop.local -setcookie test
+
+Once all the slave nodes are running, the master node can be started with the egearmand script as usual:
+
+server$ ./egearmand -level debug -name master@server.local -setcookie test
+
+The master node will start the supervisor tree for the slave instances of egearmand.
