@@ -17,8 +17,10 @@
 %% @doc
 %% Starts the extension
 start() ->
+    log:debug(["Starting rabbitmq extension"]),
     rabbit_backend:start(),
-    rabbit_backend:start_link() .
+    rabbit_backend:start_link(),
+    log:debug(["Rabbitmq extension started"]) .
 
 
 %% @doc
@@ -26,7 +28,7 @@ start() ->
 -spec(connection_hook_for(atom()) -> boolean()) .
 
 connection_hook_for(Msg) ->
-    log:t(["Checking hook for", Msg]),
+    log:debug(["Checking hook for", Msg]),
     case Msg of
         {submit_job, ["/egearmand/rabbitmq/declare", _Unique, _Options]}  -> true ;
         {submit_job, ["/egearmand/rabbitmq/publish", _Unique, _Options]}  -> true ;
@@ -40,12 +42,12 @@ connection_hook_for(Msg) ->
 -spec(entry_point(atom(),any()) -> boolean()) .
 
 entry_point(Msg, Socket) ->
-    log:t(["Entry point of the extensions", Msg, Socket]),
+    log:debug(["Entry point of the extensions", Msg, Socket]),
     log:t([1,Msg]),
     log:t([2,Socket]),
     case Msg of
-        {submit_job, ["/egearmand/rabbitmq/declare", _Unique, Options]}   -> process_queue_creation(Options) ;
-        {submit_job, ["/egearmand/rabbitmq/publish", _Unique, Options]}   -> process_queue_publish(Options) ;
+        {submit_job, ["/egearmand/rabbitmq/declare", _Unique, Options]}   -> process_queue_creation(Options, Socket) ;
+        {submit_job, ["/egearmand/rabbitmq/publish", _Unique, Options]}   -> process_queue_publish(Options, Socket) ;
         {submit_job, ["/egearmand/rabbitmq/consume", _Unique, Options]}   -> process_queue_consume(Options, Socket) ;
         _Other                                                            -> false
     end .
@@ -60,19 +62,27 @@ stop() ->
 %% Implementation
 
 
-process_queue_creation(Options) ->
-    log:t(["options: ",Options]),
-    log:t(["Lets decode",rfc4627:decode(Options)]),
+process_queue_creation(Options, Socket) ->
+    log:debug(["options: ",Options]),
+    log:debug(["Lets decode",rfc4627:decode(Options)]),
     case rfc4627:decode(Options) of
-        {ok, {obj, DecodedOptions}, []} -> rabbit_backend:create_queue(fix_json_object(DecodedOptions)) ;
+        {ok, {obj, DecodedOptions}, []} -> rabbit_backend:create_queue(fix_json_object(DecodedOptions)),
+                                           ResponseCreated = protocol:pack_response(job_created, {"/egearmand/rabbitmq/declare"}),
+                                           gen_tcp:send(Socket, ResponseCreated),
+                                           ResponseComplete = protocol:pack_response(work_complete, {"/egearmand/rabbitmq/declare", "ok"}),
+                                           gen_tcp:send(Socket,ResponseComplete) ;
         _Other                          -> true
     end .
 
-process_queue_publish(Options) ->
+process_queue_publish(Options, Socket) ->
     case rfc4627:decode(Options) of
         {ok, {obj, DecodedOptions}, []} -> rabbit_backend:publish(proplists:get_value(content, fix_json_object(DecodedOptions)),
                                                                   proplists:get_value(name, fix_json_object(DecodedOptions)),
-                                                                  proplists:get_value(routing_key, fix_json_object(DecodedOptions))) ;
+                                                                  proplists:get_value(routing_key, fix_json_object(DecodedOptions))),
+                                           ResponseCreated = protocol:pack_response(job_created, {"/egearmand/rabbitmq/publish"}),
+                                           gen_tcp:send(Socket, ResponseCreated),
+                                           ResponseComplete = protocol:pack_response(work_complete, {"/egearmand/rabbitmq/publish", "ok"}),
+                                           gen_tcp:send(Socket,ResponseComplete) ;
         _Other                          -> true
     end .
 
@@ -85,7 +95,9 @@ process_queue_consume(Options, Socket) ->
     case rfc4627:decode(Options) of
 
         {ok, {obj, DecodedOptions}, []} ->    rabbit_backend:consume(HandlerFunction,
-                                                                     proplists:get_value(name, fix_json_object(DecodedOptions))) ;
+                                                                     proplists:get_value(name, fix_json_object(DecodedOptions))),
+                                              ResponseCreated = protocol:pack_response(job_created, {"/egearmand/rabbitmq/consume"}),
+                                              gen_tcp:send(Socket, ResponseCreated) ;
         _Other -> true
     end .
 

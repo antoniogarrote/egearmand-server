@@ -14,6 +14,12 @@ start_link(Options) ->
 
 
 init(Options) ->
+    %% Let's start the extensions
+    lists:foreach(fun(Elem) ->
+                                     erlang:apply(Elem, start, [])
+                             end,
+                             configuration:extensions()),
+
     %% Let's start Mnesia in all the nodes
     lists:foreach(fun(N) ->
                           if
@@ -63,5 +69,5 @@ init(Options) ->
                           {administration, start_link, []},
                           permanent, 5000, worker, [administration]},
     %% supervisor specification
-    {ok,{{one_for_all,1,1}, 
+    {ok,{{one_for_all,1,1},
          [LoggerServer, WorkersRegistry, FunctionsRegistry, JobsQueueServer, ConnectionsServer, AdministrationServer]}}.

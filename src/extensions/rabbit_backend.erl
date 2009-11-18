@@ -12,7 +12,7 @@
 -include_lib("rabbit_states.hrl").
 -include_lib("rabbitmq_erlang_client/include/amqp_client.hrl").
 
--export([start/0, start_link/0]) .
+-export([start/0, start_link/0, create_queue/1, publish/3, consume/2]) .
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 

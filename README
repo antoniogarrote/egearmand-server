@@ -40,7 +40,7 @@ The dependencies for building the extension are:
 You can find instructions about setting up rabbitmq-server and the erlang client
 on OS X here: http://antoniogarrote.lacoctelera.net/post/2009/08/27/installing-rabbitmq-erlang-client-in-os-x
 
-There are examples in the /examples directory  Of three ruby
+There are examples in the /examples directory  of three ruby
 scripts creating, publishing and consuming messages from a queue
 through the egearmand server.
 
@@ -121,7 +121,7 @@ In the slave node, the .app file must be edited with an empty list of nodes and 
                         {method, file},
                         {path, "egearmand.log"},
                         {check_nodes, true},
-                        {slave, false}]}}]}.
+                        {slave, true}]}}]}.
 
 Now, in each machine where the slaves nodes are going to be executed, an Erlang node with the correct full name must be started:
 

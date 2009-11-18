@@ -13,7 +13,7 @@ start(_Type, Arguments) ->
     IsSlave = proplists:get_bool(slave, ParsedArguments),
     if
         ShouldCheckNodes =:= true   -> check_environment() ;
-        ShouldCheckNodes =:= false  -> if 
+        ShouldCheckNodes =:= false  -> if
                                            IsSlave =:= false -> gearmand_supervisor:start_link(ParsedArguments) ;
                                            IsSlave =:= true  -> gearmand_slave_supervisor:start_link(ParsedArguments)
                                        end
