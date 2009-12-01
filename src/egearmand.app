@@ -1,6 +1,6 @@
 {application,egearmand,
  [{description,"gearman server"},
-  {vsn,"0.6.5"},
+  {vsn,"0.6.6"},
   {modules,[client_proxy, configuration, connections, functions_registry, gearmand, gearmand_supervisor,
             jobs_queue_server, lists_extensions, log, mnesia_store, poplists_extensions, protocol, mnesia_store, tests, worker_proxy, administration]},
   {registered,[inets_sup, httpc_manager]},

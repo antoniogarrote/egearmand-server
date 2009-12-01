@@ -1,3 +1,7 @@
+=== version 0.6.6 (01/12/2009)
+
+- not closing administrative connections
+
 === version 0.6.5 (18/10/2009)
 
 - initial support for automatically start a cluster of gearman servers.

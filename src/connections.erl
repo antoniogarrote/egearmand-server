@@ -174,16 +174,20 @@ process_connection(Msg, ClientSocket) ->
 
         %% administrative requests
         {status, none} ->
-            gen_tcp:send(ClientSocket, administration:status()) ;
+            gen_tcp:send(ClientSocket, administration:status()),
+            process_connection(ClientSocket);
 
         {workers, none} ->
-            gen_tcp:send(ClientSocket, administration:workers()) ;
+            gen_tcp:send(ClientSocket, administration:workers()),
+            process_connection(ClientSocket);
 
         {version, none} ->
-            gen_tcp:send(ClientSocket, administration:version()) ;
+            gen_tcp:send(ClientSocket, administration:version()),
+            process_connection(ClientSocket);
 
         {maxqueue, none} ->
-            gen_tcp:send(ClientSocket, "OK") ;
+            gen_tcp:send(ClientSocket, "OK"),
+            process_connection(ClientSocket);
 
         {shutdown, none} ->
             log:info("shutdown requested"),
