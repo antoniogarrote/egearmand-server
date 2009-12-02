@@ -12,7 +12,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([start_link/0, register_worker_proxy/1, unregister_worker_proxy/1, update_worker_current/2, worker_functions/0]) .
--export([add_worker_function/2, remove_worker_function/2, update_worker_id/2]).
+-export([add_worker_function/2, remove_worker_function/2, update_worker_id/2, check_worker_for_job/1]).
 
 %% Public API
 
@@ -61,6 +61,12 @@ remove_worker_function(ProxyIdentifier, Function) ->
 
 
 %% @doc
+%% Returns the worker associated to a job handle
+check_worker_for_job(JobHandle) ->
+    gen_server:call({global,workers_registry},{check_worker_for_job, JobHandle}) .
+
+
+%% @doc
 %% Retuns all the registered workers at a certain moment
 worker_functions() ->
     gen_server:call({global,workers_registry},{worker_functions}) .
@@ -80,6 +86,22 @@ handle_call({register, WorkerProxyInfo}, _From, _Store) ->
 handle_call({unregister, ProxyIdentifier}, _From, _Store) ->
     {reply, ok, mnesia_store:delete(ProxyIdentifier, worker_proxy_info)} ;
 
+handle_call({check_worker_for_job, JobHandle}, _From, St) ->
+    WorkerProxies = mnesia_store:all(fun(State) ->
+                                             Current = State#worker_proxy_info.current,
+                                             case Current of
+                                                 #job_request{ identifier = JobHandle } ->
+                                                     true ;
+                                                 _Other  ->
+                                                     false
+                                             end
+                                     end,
+                                     worker_proxy_info),
+    case WorkerProxies of
+        [WorkerProxy] -> {reply, WorkerProxy, St} ;
+        []            -> {reply, false, St}
+    end ;
+
 handle_call({worker_functions}, _From, Store) ->
     ProxyInfos = mnesia_store:all(worker_proxy_info),
     FilteredInfos = lists:filter(fun(#worker_proxy_info{current = Job}) -> Job =/= none end, ProxyInfos),
@@ -92,6 +114,7 @@ handle_cast({update_current, ProxyIdentifier, Current}, State) ->
                         ProxyIdentifier,
                         worker_proxy_info),
     {noreply, State} ;
+
 
 handle_cast({update_worker_id, ProxyIdentifier, Id}, State) ->
     log:debug([ProxyIdentifier, "Updating worker ID", Id]),

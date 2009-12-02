@@ -8,7 +8,9 @@
 
 -behaviour(gen_server) .
 
--export([start_link/2, send/2, client_process_connection/2]) .
+-include_lib("states.hrl").
+
+-export([start_link/2, send/2, client_process_connection/2, close/1, gearman_message/3]) .
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 
@@ -17,9 +19,9 @@
 
 %% @doc
 %% Starts a new client for socket Socket and global identifier Identifier.
-start_link(Identifier, [Socket, JobHandle]) ->
+start_link(Identifier, [Background, Socket, JobHandle]) ->
     log:debug(["client_proxy start_link",Identifier]),
-    gen_server:start_link({global, Identifier}, client_proxy, [Identifier,Socket, JobHandle], []) .
+    gen_server:start_link({global, Identifier}, client_proxy, [Background, Identifier,Socket, JobHandle], []) .
 
 
 %% @doc
@@ -45,20 +47,44 @@ gearman_message(ClientProxy,Msg,Arguments) ->
 %% Callbacks
 
 
-init([Identifier, Socket, JobHandle]) ->
+init([Background, Identifier, Socket, JobHandle]) ->
+    log:debug(["Starting client proxy ", Identifier, "for handling ", JobHandle]),
     spawn(client_proxy, client_process_connection, [Identifier, Socket]),
-    {ok, [Socket, JobHandle]} .
+    {ok, [Background, Socket, JobHandle]} .
 
 
-handle_call({option_req, [Option]}, _From, [Socket, JobHandle] = State) ->
+handle_call({option_req, [Option]}, _From, [_Background, Socket, JobHandle] = State) ->
     jobs_queue_server:update_job_options(JobHandle, Option),
     Response = protocol:pack_response(option_res, Option),
     gen_tcp:send(Socket, Response),
     {reply, ok, State} ;
 
-handle_call({send, Data}, _From, [Socket, _JobHandle] = State) ->
-    Res = gen_tcp:send(Socket, Data),
-    {reply, Res, State} ;
+
+handle_call({get_status, [Handle]}, _From, [_Background, Socket, _JobHandle] = State) ->
+    Jobs = mnesia_store:all(fun(S) ->
+                                    S#job_request.identifier =:= Handle
+                            end,
+                            job_request),
+    case Jobs of
+        []     -> Response = protocol:pack_response(status_res, {Handle, 0, 0, 0, 0}),
+                  gen_tcp:send(Socket, Response) ;
+        _Other ->
+            case workers_registry:check_worker_for_job(Handle) of
+                false        -> Response = protocol:pack_response(status_res, {Handle, 1, 0, 0, 0}),
+                                gen_tcp:send(Socket, Response) ;
+                _WorkerProxy -> Response = protocol:pack_response(status_res, {Handle, 1, 1, 0, 0}),
+                                gen_tcp:send(Socket, Response)
+            end
+    end,
+    {reply, ok, State} ;
+
+handle_call({send, Data}, _From, [Background, Socket, JobHandle] = State) ->
+    log:debug(["client proxy sending data for job", JobHandle, " background ", Background]),
+    case Background =:= false of
+         true -> Res = gen_tcp:send(Socket, Data),
+                 {reply, Res, State} ;
+        false -> {reply, ok, State}
+    end ;
 
 handle_call(stop, _From, State) ->
     {stop, normal, stopped, State} .
@@ -100,13 +126,16 @@ client_process_connection(ProxyIdentifier, ClientSocket) ->
                                               {option_req, [Option]} ->
                                                   client_proxy:gearman_message(ProxyIdentifier, option_req, [Option]);
 
+                                              {get_status, Handle} ->
+                                                  client_proxy:gearman_message(ProxyIdentifier, get_status, [Handle]);
+
                                               Other ->
                                                   log:info(["client_proxy client_process_connection : unknown message",Other])
                                           end
                                   end,
                                   Msgs),
                     %% Let's check if some error was found while processing messages
-                    {FoundError, _Error} = lists_extensions:detect(fun(Msg) -> case Msg of 
+                    {FoundError, _Error} = lists_extensions:detect(fun(Msg) -> case Msg of
                                                                                    {error,_Kind} -> true ;
                                                                                    _Other        -> false
                                                                                end

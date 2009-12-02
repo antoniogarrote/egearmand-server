@@ -11,6 +11,7 @@
 -include_lib("eunit/include/eunit.hrl") .
 
 -export([otp_start/0, start/0, create_tables/0, load_tables/0, insert/2, dequeue/2, all/1, all/2, delete/2, dirty_find/2, update/3]) .
+-export([delete_multi/2]) .
 
 
 %% @doc
@@ -127,6 +128,19 @@ dequeue(PKey, TableName) ->
 delete(Key, TableName) ->
     log:info(["mnesia_store delete",TableName]),
     mnesia:transaction(fun() -> mnesia:delete({ TableName, Key}) end) .
+
+
+%% @doc
+%% Deletes the object with the given key from the table.
+delete_multi(Keys, TableName) ->
+    log:info(["mnesia_store delete mutli",TableName]),
+    mnesia:transaction(fun() ->
+                               lists:foreach(fun(K) ->
+                                                     mnesia:delete({ TableName, K})
+                                             end,
+                                             Keys)
+                       end).
+
 
 %% @doc
 %% retrieves all the elements for a key

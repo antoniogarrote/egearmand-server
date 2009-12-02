@@ -86,6 +86,7 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
     case ClientConnectionResult of
 
         {ok, ClientSocket} ->
+            log:error(["server_socket_process receiving client socket"]),
             spawn(connections, process_connection, [ClientSocket]) ,
             server_socket_process(ServerSocket,ConnectionsServer) ;
 
@@ -101,8 +102,9 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
 -spec(process_connection(gen_tcp:socket()) -> undefined) .
 
 process_connection(ClientSocket) ->
+    log:debug(["connections process_connection : about to process connection"]),
     {ok, Bin} = do_recv(ClientSocket),
-    log:debug(["connections process_connection : Received from client",Bin]),
+    log:debug(["connections process_connection : Received from client ",Bin]),
     % this thread will process the request and notify us with the message
     Msgs = protocol:process_request(Bin, []),
     log:debug(["connections process_connection : msgs in queue ",Msgs]),
@@ -164,13 +166,14 @@ process_connection(Msg, ClientSocket) ->
             process_job(low, FunctionName, Arguments, ClientSocket) ;
 
         {submit_job_bg, [FunctionName | Arguments]} ->
-            process_job_bg(normal, FunctionName, Arguments, ClientSocket) ;
+            process_job_bg(normal, FunctionName, Arguments, ClientSocket);
 
         {submit_job_high_bg, [FunctionName | Arguments]} ->
-            process_job_bg(high, FunctionName, Arguments, ClientSocket) ;
+            process_job_bg(high, FunctionName, Arguments, ClientSocket);
 
         {submit_job_low_bg, [FunctionName | Arguments]} ->
-            process_job_bg(low, FunctionName, Arguments, ClientSocket) ;
+            process_job_bg(low, FunctionName, Arguments, ClientSocket);
+
 
         %% administrative requests
         {status, none} ->
@@ -204,7 +207,7 @@ process_connection(Msg, ClientSocket) ->
 %% doc
 %% Common logic for dispatching background jobs of different priority level
 process_job_bg(Level, FunctionName, Arguments, ClientSocket) ->
-    {ok, Handle} = jobs_queue_server:submit_job(FunctionName, Arguments, no_socket, Level),
+    {ok, Handle} = jobs_queue_server:submit_job(true, FunctionName, Arguments, ClientSocket, Level),
     Response = protocol:pack_response(job_created, {Handle}),
     gen_tcp:send(ClientSocket, Response),
     WorkerProxies = functions_registry:workers_for_function(FunctionName),
@@ -216,7 +219,7 @@ process_job_bg(Level, FunctionName, Arguments, ClientSocket) ->
 %% doc
 %% Common logic for dispatching jobs of different priority level
 process_job(Level, FunctionName, Arguments, ClientSocket) ->
-    {ok, Handle} = jobs_queue_server:submit_job(FunctionName, Arguments, ClientSocket, Level),
+    {ok, Handle} = jobs_queue_server:submit_job(false, FunctionName, Arguments, ClientSocket, Level),
     Response = protocol:pack_response(job_created, {Handle}),
     gen_tcp:send(ClientSocket, Response),
     WorkerProxies = functions_registry:workers_for_function(FunctionName),
@@ -247,7 +250,7 @@ do_recv(Sock, Bs) ->
 do_recv(Sock) ->
     case gen_tcp:recv(Sock, 0) of
         {ok, B} ->
-           {ok, B} ;
+            {ok, B} ;
         {error, closed} ->
             {error, socket_closed}
     end.

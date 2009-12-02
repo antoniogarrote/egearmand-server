@@ -63,7 +63,7 @@ handle_call({status}, _From, State) ->
 handle_call({workers}, _From, State) ->
     Workers = mnesia_store:all(worker_proxy_info),
     log:debug(["READ WORKERS: ",Workers]),
-    StrFs = lists:map(fun(#worker_proxy_info{identifier = Id, ip= {N1,N2,N3,N4}, worker_id=WorkerId, functions = Fs}) ->
+    StrFs = lists:map(fun(#worker_proxy_info{identifier = _Id, ip= {N1,N2,N3,N4}, worker_id=WorkerId, functions = Fs}) ->
                               log:debug(["Let's fold: ", Fs]),
                               StrFunctions = lists:foldl(fun(F,Acum) -> F ++ " " ++ Acum end, "", Fs),
                               lists:flatten(io_lib:format("0 ~p.~p.~p.~p ~s : ",[N1,N2,N3,N4,WorkerId])) ++ StrFunctions

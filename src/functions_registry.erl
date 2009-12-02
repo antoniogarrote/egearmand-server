@@ -12,7 +12,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
--export([start_link/0, register_function/2, unregister_from_function/2, workers_for_function/1]) .
+-export([start_link/0, register_function/2, unregister_from_function/2, unregister_from_function_multi/2, workers_for_function/1]) .
 
 
 %% Public API
@@ -37,6 +37,13 @@ unregister_from_function(Ref, FunctionName) ->
 
 
 %% @doc
+%% Unregisters a worker proxy from a set of functions.
+unregister_from_function_multi(Ref, FunctionNames) ->
+    gen_server:call(functions_registry,{unregister_multi, Ref, FunctionNames}) .
+
+
+
+%% @doc
 %% Retrieves all the workers associated to a function.
 workers_for_function(FunctionName) ->
     gen_server:call(functions_registry, {workers_for, FunctionName}) .
@@ -55,6 +62,12 @@ handle_call({register, Ref, FunctionName}, _From, _Store) ->
 
 handle_call({unregister, Ref, FunctionName}, _From, _Store) ->
     {reply, ok, mnesia_store:delete({FunctionName, Ref}, function_register)} ;
+
+handle_call({unregister_multi, Ref, FunctionNames}, _From, _Store) ->
+    Keys = lists:map(fun(F) -> {F,Ref} end, FunctionNames),
+    mnesia_store:delete_multi(Keys, function_register),
+    {reply, ok, function_register} ;
+
 
 handle_call({workers_for, FunctionName}, _From, _Store) ->
     log:debug(["Looking workers for function",FunctionName]),

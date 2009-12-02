@@ -13,7 +13,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -export([start_link/2, gearman_message/3, cast_gearman_message/3, worker_process_connection/3, error_in_worker/2]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, worker_disconnection/2]).
 
 
 %% Public API
@@ -40,6 +40,13 @@ error_in_worker(WorkerProxy, Error) ->
     gen_server:call({global, WorkerProxy}, {error_in_worker, Error}) .
     %TODO kill the proxy
 
+
+%% @doc
+%% Terminates the execution of the worker proxy unregistering the worker
+%% from the worker and functions registries.
+worker_disconnection(WorkerProxy, Error) ->
+    log:debug(["worker_proxy disconnecting: ",WorkerProxy, error, Error]),
+    gen_server:call({global, WorkerProxy}, {worker_disconnection, Error}) .
 
 %% @doc
 %% Redirects a Gearman protocol message to the worker proxy.
@@ -106,10 +113,33 @@ handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, 
 
 handle_call({error_in_worker, [_Error]}, _From, State) ->
     case configuration:on_worker_failure() of
-        reeschedule -> jobs_queue_server:reeschedule_job(State) ;
+        reeschedule -> case State#worker_proxy_state.current =/= none of
+                           true  -> jobs_queue_server:reeschedule_job(State#worker_proxy_state.current) ;
+                           false -> notify_error(State)
+                       end ;
         none        -> notify_error(State)
     end,
     {reply, ok, State } ;
+
+
+handle_call({worker_disconnection, _Error}, _From, State) ->
+    % Should we reeschedule the current task?
+    log:debug(["worker disconnection checking on_worker_failure"]),
+    case configuration:on_worker_failure() of
+        reeschedule -> case State#worker_proxy_state.current =/= none of
+                           true  -> jobs_queue_server:reeschedule_job(State#worker_proxy_state.current) ;
+                           false -> notify_error(State)
+                       end ;
+        none        -> notify_error(State)
+    end,
+    % Unregistering functions
+    log:debug(["worker disconnection unregistering functions multi"]),
+     functions_registry:unregister_from_function_multi(State#worker_proxy_state.identifier,
+                                                       State#worker_proxy_state.functions),
+    % Removing worker_proxy info
+    log:debug(["worker disconnection unregistering proxy"]),
+    workers_registry:unregister_worker_proxy(State#worker_proxy_state.identifier),
+    {stop, normal, exit, State} ;
 
 handle_call({work_status, [JobIdentifier, Numerator,Denominator]}, _From, #worker_proxy_state{ current = Job } = State) ->
     UpdatedJob = Job#job_request{ status = { Numerator, Denominator } },
@@ -183,6 +213,9 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 
+terminate(normal, #worker_proxy_state{identifier = Identifier}) ->
+    log:debug(["About to terminate with normal state", Identifier]),
+    ok ;
 terminate(shutdown, #worker_proxy_state{identifier = Identifier, socket = WorkerSocket}) ->
     gen_tcp:close(WorkerSocket),
     log:debug(["About to shutdown worker proxy connection", Identifier]),
@@ -208,7 +241,7 @@ disable_function(Identifier, FunctionName) ->
     functions_registry:unregister_from_function(Identifier, FunctionName) .
 
 %% @doc
-%% stores a function in the functions array if it 
+%% stores a function in the functions array if it
 %% wasn't already stored
 -spec(update_functions(atom(), [atom()]) -> {(not_in_list | already_in_list), [atom()]}) .
 
@@ -300,7 +333,7 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
                                   end,
                                   Msgs),
                     %% Let's check if some error was found while processing messages
-                    {FoundError, Error} = lists_extensions:detect(fun(Msg) -> case Msg of 
+                    {FoundError, Error} = lists_extensions:detect(fun(Msg) -> case Msg of
                                                                                   {error,_Kind} -> true ;
                                                                                   _Other        -> false
                                                                               end
@@ -315,7 +348,9 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
 
             % log for now
             % @todo Notify to proxy, empty queues and finish execution of the server
-            log:error(["worker_proxy worker_proxy_connection : Error in worker proxy", Error])
+            log:error(["worker_proxy worker_proxy_connection : Error in worker proxy, about to notify", Error]),
+            worker_proxy:worker_disconnection(ProxyIdentifier, Error),
+            log:error(["worker_proxy worker_proxy_connection : Error in worker proxy notified!"])
     end .
 
 check_queues_for([]) ->

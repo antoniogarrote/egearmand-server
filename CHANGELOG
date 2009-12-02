@@ -1,6 +1,8 @@
 === version 0.6.6 (01/12/2009)
 
-- not closing administrative connections
+- administrative connections remain open
+- proper cleanup of workers after disconnection
+- implemented missing status_req/status_res commands
 
 === version 0.6.5 (18/10/2009)
 

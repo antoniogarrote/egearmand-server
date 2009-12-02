@@ -11,8 +11,8 @@
 -include_lib("states.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/0, submit_job/4, lookup_job/1, reeschedule_job/1, check_option_for_job/2]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([start_link/0, submit_job/5, lookup_job/1, reeschedule_job/1, check_option_for_job/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, update_job_options/2]).
 
 
 %% Public API
@@ -25,21 +25,17 @@ start_link() ->
 %% @doc
 %% Creates a new job request for a certain FunctionName, and Level from a
 %% client connection established from ClientSocket.
-submit_job(FunctionName, [UniqueId, OpaqueData], ClientSocket, Level) ->
+submit_job(Background, FunctionName, [UniqueId, OpaqueData], ClientSocket, Level) ->
     Identifier = lists:flatten(io_lib:format("job@~p:(~p)",[node(),make_ref()])),
-    ClientProxyId = case ClientSocket of
-                        no_socket -> no_socket ;
-                        _Other     ->  {ok, {Adress,Port}} = inet:peername(ClientSocket),
-                                       ClientProxyIdentifier = list_to_atom(lists:flatten(io_lib:format("client@~p:~p:~p",[node(),Adress,Port]))),
-                                       client_proxy:start_link(ClientProxyIdentifier, [ClientSocket, Identifier]),
-                                       ClientProxyIdentifier
-                    end,
+    {ok, {Adress,Port}} = inet:peername(ClientSocket),
+    ClientProxyId = list_to_atom(lists:flatten(io_lib:format("client@~p:~p:~p",[node(),Adress,Port]))),
+    client_proxy:start_link(ClientProxyId, [Background, ClientSocket, Identifier]),
     JobRequest = #job_request{ identifier = Identifier,
                                function = FunctionName,
                                unique_id = UniqueId,
                                opaque_data = OpaqueData,
                                level = Level,
-                               client_socket_id = ClientProxyId }, % this can be no_socket if the job is detached
+                               client_socket_id  = ClientProxyId },
     gen_server:call(jobs_queue_server, {submit_job, JobRequest, Level}) .
 
 
@@ -57,7 +53,7 @@ update_job_options(JobHandle, Option) ->
 
 
 %% @doc
-%% Searches for some job associated to the function identified byFunctionName in the queues 
+%% Searches for some job associated to the function identified byFunctionName in the queues
 %% of jobs for all the priorities: high, normal and low.
 %% The first job request associated to FunctionName in the queue of higher priorityis returned.
 -spec(lookup_job(atom()) -> {ok, (not_found | #job_request{})}) .
@@ -113,7 +109,7 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 
-terminate(shutdown, #connections_state{ socket = ServerSock }) ->
+terminate(shutdown, #connections_state{ socket = _ServerSock }) ->
     ok.
 
 
