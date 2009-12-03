@@ -2,7 +2,8 @@ require 'rake/clean'
 
 INCLUDE = "contrib"
 
-ERLC_FLAGS = "-I#{INCLUDE} +warn_unused_vars +warn_unused_import +debug_info "
+#ERLC_FLAGS = "-I#{INCLUDE} +warn_unused_vars +warn_unused_import +debug_info "
+ERLC_FLAGS = "-I#{INCLUDE} +warn_unused_vars +warn_unused_import "
 
 SRC = FileList['src/*.erl']
 OBJ = SRC.pathmap("%{ebin}X.beam")
