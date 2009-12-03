@@ -75,9 +75,13 @@ parse_command(CommandID, Data) ->
         3 -> reset_abilities;
         4 -> pre_sleep;
         9 -> grab_job;
+        30 -> grab_job_uniq;
         11 ->
             [Handle, Function, Argument] = split(Data, 0, 2),
             {job_assign, Handle, Function, Argument};
+        31 ->
+            [Handle, Function, Argument] = split(Data, 0, 2),
+            {job_assign_uniq, Handle, Function, Argument};
         24 -> all_yours;
         6 -> noop;
         10 -> no_job;
@@ -87,9 +91,18 @@ parse_command(CommandID, Data) ->
         21 ->
             [Function, Unique, Argument] = split(Data, 0, 2),
             {submit_job_high, Function, Unique, Argument};
+        32 ->
+            [Function, Unique, Argument] = split(Data, 0, 2),
+            {submit_job_high, Function, Unique, Argument};
+
         33 ->
             [Function, Unique, Argument] = split(Data, 0, 2),
             {submit_job_low, Function, Unique, Argument};
+
+        34 ->
+            [Function, Unique, Argument] = split(Data, 0, 2),
+            {submit_job_low_bg, Function, Unique, Argument};
+
         18 ->
             [Function, Unique, Argument] = split(Data, 0, 2),
             {submit_job_bg, Function, Unique, Argument};
@@ -99,7 +112,9 @@ parse_command(CommandID, Data) ->
         27 -> {option_res, Data}; % Name of the option
         20 ->
             [Handle, Known, Running, Numerator, Denominator] = split(Data, 0, 4),
-            {status_res, Handle, Known, Running, list_to_integer(Numerator), list_to_integer(Denominator)}
+            {status_res, Handle, Known, Running, list_to_integer(Numerator), list_to_integer(Denominator)} ;
+        Other -> log:debug(["UKNOWN COMMAND: ", Other]),
+                 noexisto:functionon(Other)
     end.
 
 pack_request(Command, Args) when is_atom(Command), is_tuple(Args) ->
@@ -129,13 +144,17 @@ pack_command(cant_do, {Func}) -> {2, [Func]};
 pack_command(reset_abilities, {}) -> {3, []};
 pack_command(pre_sleep, {}) -> {4, []};
 pack_command(grab_job, {}) -> {9, []};
+pack_command(grab_job_uniq, {}) -> {30, []};
 pack_command(job_assign, {Handle, Func, Arg}) -> {11, [Handle, Func, Arg]};
+pack_command(job_assign_uniq, {Handle, Func, Arg}) -> {31, [Handle, Func, Arg]};
 pack_command(all_yours, {}) -> {24, []};
 pack_command(noop, {}) -> {6, []};
 pack_command(no_job, {}) -> {10, []};
 pack_command(submit_job, {Func, Uniq, Arg}) -> {7, [Func, Uniq, Arg]};
 pack_command(submit_job_high, {Func, Uniq, Arg}) -> {21, [Func, Uniq, Arg]};
+pack_command(submit_job_high_bg, {Func, Uniq, Arg}) -> {32, [Func, Uniq, Arg]};
 pack_command(submit_job_low, {Func, Uniq, Arg}) -> {33, [Func, Uniq, Arg]};
+pack_command(submit_job_low_bg, {Func, Uniq, Arg}) -> {34, [Func, Uniq, Arg]};
 pack_command(submit_job_bg, {Func, Uniq, Arg}) -> {18, [Func, Uniq, Arg]};
 pack_command(job_created, {Handle}) -> {8, [Handle]};
 pack_command(get_status, {Handle}) -> {15, [Handle]};
@@ -164,7 +183,6 @@ split([Other|Rest], Separator, Lists, Current, Count) when Count > 0 ->
 
 %% handling the logic
 process_request(Bin, Msgs) ->
-    log:t(["Processing request", protocol:parse_command(Bin)]),
     case protocol:parse_command(Bin) of
         {ok,<<>>, _Kind, {Cmd,Arg1, Arg2}} ->
             lists:reverse([{Cmd,[Arg1, Arg2]} | Msgs]) ;

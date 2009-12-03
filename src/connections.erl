@@ -7,7 +7,7 @@
 -include_lib("states.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([start_link/1, start_link/2, close_connection/0, check_worker_proxy_for/2, do_recv/2, do_recv/1, server_socket_process/2, process_connection/1]).
+-export([start_link/1, start_link/2, close_connection/0, check_worker_proxy_for/2, do_recv/1, do_recv/2, server_socket_process/2, process_connection/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 %% Public API
@@ -36,8 +36,10 @@ init(#connections_state{ configuration = Configuration} = State) ->
     {ok,Ip} = inet:getaddr(proplists:get_value(host,Configuration),inet),
     {ok, ServerSock} = gen_tcp:listen(proplists:get_value(port,Configuration),
                                       [binary,
+                                       {packet, raw},
+                                       {nodelay, true},
+                                       {reuseaddr, true},
                                        {ip,Ip},
-                                       {packet, 0},
                                        {active, false}]),
     spawn(connections, server_socket_process, [ServerSock, connections]),
     {ok, State#connections_state{ socket = ServerSock } }.
@@ -87,6 +89,8 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
 
         {ok, ClientSocket} ->
             log:error(["server_socket_process receiving client socket"]),
+            %spawn(connections, server_socket_process, [ServerSocket, ConnectionsServer]),
+            %process_connection(ClientSocket) ;
             spawn(connections, process_connection, [ClientSocket]) ,
             server_socket_process(ServerSocket,ConnectionsServer) ;
 
@@ -132,6 +136,9 @@ process_connection(Msg, ClientSocket) ->
     NewIdentifier = list_to_atom(lists:flatten(io_lib:format("worker@~p:~p:~p",[node(),Adress,Port]))),
 
     case Msg of
+        {pre_sleep, none} ->
+            none;
+
         {set_client_id, []} ->
             log:debug(["connections process_connection : set_client_id",[]]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
@@ -152,9 +159,16 @@ process_connection(Msg, ClientSocket) ->
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, grab_job, none) ;
 
+        {grab_job_uniq, none} ->
+            log:debug(["connections process_connection : grab_job_uniq"]),
+            check_worker_proxy_for(NewIdentifier, ClientSocket),
+            worker_proxy:gearman_message(NewIdentifier, grab_job_uniq, none) ;
+
+
         {echo_req, Opaque} ->
             log:debug("connections process_connection : echo_req"),
-            gen_tcp:send(ClientSocket, protocol:pack_response(echo_res, {Opaque})) ;
+            gen_tcp:send(ClientSocket, protocol:pack_response(echo_res, {Opaque})),
+            process_connection(ClientSocket);
 
         {submit_job, [FunctionName | Arguments]} ->
             process_job(normal, FunctionName, Arguments, ClientSocket) ;
@@ -233,11 +247,11 @@ process_job(Level, FunctionName, Arguments, ClientSocket) ->
 %% Function for reading from a socket until it closes
 %% its connection.
 -spec(do_recv(gen_tcp:socket(), binary()) -> binary()) .
-
 do_recv(Sock, Bs) ->
     case gen_tcp:recv(Sock, 0) of
         {ok, B} ->
-            do_recv(Sock, [Bs, B]);
+            log:debug(["read something more", B]),
+            do_recv(Sock, [Bs | B]);
         {error, closed} ->
             {ok, list_to_binary(Bs)}
     end.
@@ -246,12 +260,23 @@ do_recv(Sock, Bs) ->
 %% @doc
 %% request a data packet from a socket.
 -spec(do_recv(gen_tcp:socket()) -> binary()) .
-
+%% do_recv(Socket) ->
+%%     receive
+%%         {tcp, Socket, Bin} ->
+%%             Bin ;
+%%         {tcp_closed, _Socket} ->
+%%             io:format("Server socket closed~n"),
+%%             {error, socket_closed}
+%%     end.
 do_recv(Sock) ->
     case gen_tcp:recv(Sock, 0) of
         {ok, B} ->
+            log:debug(["read something", B]),
             {ok, B} ;
         {error, closed} ->
+            {error, socket_closed} ;
+        {error, Reason} ->
+            log:debug(["ERROR!!!", Reason]),
             {error, socket_closed}
     end.
 

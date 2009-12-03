@@ -4,6 +4,7 @@
                              worker_proxies = []:: list() }) .
 
 -record(job_request, { identifier :: string(),
+                       background :: true | false,
                        function :: binary(),
                        queue_key :: { binary(), atom() },
                        unique_id :: binary(),

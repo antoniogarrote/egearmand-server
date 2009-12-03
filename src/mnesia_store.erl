@@ -89,11 +89,14 @@ update(P, Key, TableName) ->
     log:info(["mnesia_store update",TableName]),
     F = fun() ->
                 case mnesia:read({TableName, Key}) of
-                    []     -> not_found;
-                    [Found] -> mnesia:write(P(Found))
+                    []     -> log:info(["VOY A TENER UN PROBLEMA... ",Key, TableName]),
+                              not_found;
+                    [Found] -> log:info(["SERA OTRA COSA... ", Key, TableName]),
+                               mnesia:write(P(Found))
                 end
         end,
     {atomic, Result} = mnesia:transaction(F),
+    log:info(["mnesia_store updated!",TableName]),
     Result.
 
 
@@ -109,7 +112,6 @@ insert(Value, TableName) ->
 %% retrieves the first element from queue with value Key deleting it
 %% from the queue
 dequeue(PKey, TableName) ->
-    log:info(["mnesia dequeue", TableName]),
     {atomic, Value } = mnesia:transaction(fun() ->
                                                   C = qlc:cursor(qlc:sort(qlc:q([X || X <- mnesia:table(TableName), PKey(X)]))),
                                                   case  qlc:next_answers(C,1) of

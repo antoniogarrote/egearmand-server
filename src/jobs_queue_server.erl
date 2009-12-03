@@ -13,6 +13,7 @@
 
 -export([start_link/0, submit_job/5, lookup_job/1, reeschedule_job/1, check_option_for_job/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, update_job_options/2]).
+-export([submit_job_from_client_proxy/5]) .
 
 
 %% Public API
@@ -26,15 +27,34 @@ start_link() ->
 %% Creates a new job request for a certain FunctionName, and Level from a
 %% client connection established from ClientSocket.
 submit_job(Background, FunctionName, [UniqueId, OpaqueData], ClientSocket, Level) ->
-    Identifier = lists:flatten(io_lib:format("job@~p:(~p)",[node(),make_ref()])),
+    Identifier = lists:flatten(io_lib:format("H:~p:~p",[node(),make_ref()])),
     {ok, {Adress,Port}} = inet:peername(ClientSocket),
     ClientProxyId = list_to_atom(lists:flatten(io_lib:format("client@~p:~p:~p",[node(),Adress,Port]))),
-    client_proxy:start_link(ClientProxyId, [Background, ClientSocket, Identifier]),
+    case global:whereis_name(ClientProxyId) of
+        undefined -> client_proxy:start_link(ClientProxyId, ClientSocket) ;
+        _PID      -> dont_care
+    end,
     JobRequest = #job_request{ identifier = Identifier,
                                function = FunctionName,
                                unique_id = UniqueId,
                                opaque_data = OpaqueData,
                                level = Level,
+                               background = Background,
+                               client_socket_id  = ClientProxyId },
+    gen_server:call(jobs_queue_server, {submit_job, JobRequest, Level}) .
+
+
+%% @doc
+%% Creates a new job request for a certain FunctionName, and Level from a
+%% client connection established from ClientSocket.
+submit_job_from_client_proxy(ClientProxyId, Background, FunctionName, [UniqueId, OpaqueData], Level) ->
+    Identifier = lists:flatten(io_lib:format("job@~p:(~p)",[node(),make_ref()])),
+    JobRequest = #job_request{ identifier = Identifier,
+                               function = FunctionName,
+                               unique_id = UniqueId,
+                               opaque_data = OpaqueData,
+                               level = Level,
+                               background = Background,
                                client_socket_id  = ClientProxyId },
     gen_server:call(jobs_queue_server, {submit_job, JobRequest, Level}) .
 
@@ -92,7 +112,6 @@ handle_call({update_options, JobHandle, Option}, _From, _State) ->
     {reply, Res, _State} ;
 
 handle_call({lookup_job, FunctionName}, _From, State) ->
-    log:info(["jobs_queue_server, lookup_job", FunctionName]),
     Found = do_lookup_job(FunctionName, State, [high, normal, low]),
     case Found of
         {not_found, StateP} -> {reply, {ok, not_found}, StateP} ;

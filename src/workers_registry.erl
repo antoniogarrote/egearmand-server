@@ -12,7 +12,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([start_link/0, register_worker_proxy/1, unregister_worker_proxy/1, update_worker_current/2, worker_functions/0]) .
--export([add_worker_function/2, remove_worker_function/2, update_worker_id/2, check_worker_for_job/1]).
+-export([add_worker_function/2, remove_worker_function/2, update_worker_id/2, check_worker_for_job/1, check_handle_for_worker/1]).
 
 %% Public API
 
@@ -34,6 +34,11 @@ register_worker_proxy(WorkerProxyInfo) ->
 %% Unregisters a worker proxy from a function.
 unregister_worker_proxy(ProxyIdentifier) ->
     gen_server:call({global,workers_registry},{unregister, ProxyIdentifier}) .
+
+%% @doc
+%% Checks if any worker in the registry has the handle in their current jobs.
+check_handle_for_worker(Handle) ->
+    gen_server:call({global,workers_registry},{check_handle_for_worker, Handle}) .
 
 %% @doc
 %% Updates the state of a worker proxy setting the current function being
@@ -89,6 +94,7 @@ handle_call({unregister, ProxyIdentifier}, _From, _Store) ->
 handle_call({check_worker_for_job, JobHandle}, _From, St) ->
     WorkerProxies = mnesia_store:all(fun(State) ->
                                              Current = State#worker_proxy_info.current,
+                                             log:debug(["CHECK WORKER vs ->",JobHandle, State#worker_proxy_info.current]),
                                              case Current of
                                                  #job_request{ identifier = JobHandle } ->
                                                      true ;
@@ -106,13 +112,22 @@ handle_call({worker_functions}, _From, Store) ->
     ProxyInfos = mnesia_store:all(worker_proxy_info),
     FilteredInfos = lists:filter(fun(#worker_proxy_info{current = Job}) -> Job =/= none end, ProxyInfos),
     Functions = lists:map(fun(#worker_proxy_info{current = C}) -> C#job_request.function end,FilteredInfos),
-    {reply, Functions, Store}.
+    {reply, Functions, Store} ;
 
+
+handle_call({check_handle_for_worker, Handle}, _From, Store) ->
+    mnesia_store:all(fun(S) ->
+                             log:debug(["Comparing with ", S#job_request.identifier, S#job_request.unique_id]),
+                             (S#job_request.identifier =:= Handle) or (S#job_request.unique_id =:= Handle)
+                     end,
+                     job_request) .
 
 handle_cast({update_current, ProxyIdentifier, Current}, State) ->
+    log:debug(["Updating current :",ProxyIdentifier, Current]),
     mnesia_store:update(fun(OldState) -> OldState#worker_proxy_info{ current = Current } end,
                         ProxyIdentifier,
                         worker_proxy_info),
+%    {reply, ok, State} .
     {noreply, State} ;
 
 

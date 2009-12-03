@@ -11,7 +11,7 @@
 -include_lib("states.hrl").
 
 -export([start_link/2, send/2, client_process_connection/2, close/1, gearman_message/3]) .
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, forward_exception/2]).
 
 
 %% Public API
@@ -19,9 +19,9 @@
 
 %% @doc
 %% Starts a new client for socket Socket and global identifier Identifier.
-start_link(Identifier, [Background, Socket, JobHandle]) ->
+start_link(Identifier, Socket) ->
     log:debug(["client_proxy start_link",Identifier]),
-    gen_server:start_link({global, Identifier}, client_proxy, [Background, Identifier,Socket, JobHandle], []) .
+    gen_server:start_link({global, Identifier}, client_proxy, [Identifier,Socket, []], []) .
 
 
 %% @doc
@@ -29,6 +29,14 @@ start_link(Identifier, [Background, Socket, JobHandle]) ->
 send(Identifier,Data) ->
     log:debug(["client_proxy send", Identifier, Data]),
     gen_server:call({global, Identifier}, {send, Data}) .
+
+
+%% @doc
+%% Sends data to the client socket with proxy identified globally by Identifier.
+forward_exception(Identifier, ExceptionResponse) ->
+    log:debug(["client_proxy forwarding exception", Identifier, ExceptionResponse]),
+    gen_server:call({global, Identifier}, {forward_exception, ExceptionResponse}) .
+
 
 
 %% @doc
@@ -47,44 +55,55 @@ gearman_message(ClientProxy,Msg,Arguments) ->
 %% Callbacks
 
 
-init([Background, Identifier, Socket, JobHandle]) ->
-    log:debug(["Starting client proxy ", Identifier, "for handling ", JobHandle]),
+init([Identifier, Socket, Options]) ->
+    log:debug(["Starting client proxy ", Identifier]),
     spawn(client_proxy, client_process_connection, [Identifier, Socket]),
-    {ok, [Background, Socket, JobHandle]} .
+    {ok, [Identifier, Socket, Options]} .
 
 
-handle_call({option_req, [Option]}, _From, [_Background, Socket, JobHandle] = State) ->
-    jobs_queue_server:update_job_options(JobHandle, Option),
+handle_call({option_req, [Option]}, _From, [Identifier, Socket, Options]) ->
+    %jobs_queue_server:update_job_options(Handle, Option),
     Response = protocol:pack_response(option_res, Option),
     gen_tcp:send(Socket, Response),
-    {reply, ok, State} ;
+    {reply, ok, [Identifier, Socket, [Options | Options]]} ;
 
 
-handle_call({get_status, [Handle]}, _From, [_Background, Socket, _JobHandle] = State) ->
-    Jobs = mnesia_store:all(fun(S) ->
-                                    S#job_request.identifier =:= Handle
-                            end,
-                            job_request),
-    case Jobs of
-        []     -> Response = protocol:pack_response(status_res, {Handle, 0, 0, 0, 0}),
-                  gen_tcp:send(Socket, Response) ;
-        _Other ->
-            case workers_registry:check_worker_for_job(Handle) of
-                false        -> Response = protocol:pack_response(status_res, {Handle, 1, 0, 0, 0}),
-                                gen_tcp:send(Socket, Response) ;
-                _WorkerProxy -> Response = protocol:pack_response(status_res, {Handle, 1, 1, 0, 0}),
+handle_call({get_status, [Handle]}, _From, [_Identifier, Socket, _Options] = State) ->
+    log:debug(["Requesting state of task ", Handle]),
+    case workers_registry:check_worker_for_job(Handle) of
+        false        -> Jobs = mnesia_store:all(fun(S) ->
+                                                        log:debug(["Comparing with ", S#job_request.identifier, S#job_request.unique_id]),
+                                                        (S#job_request.identifier =:= Handle) or (S#job_request.unique_id =:= Handle)
+                                                end,
+                                                job_request),
+                        case Jobs of
+                            []     -> log:debug(["not found ", Handle]),
+                                      Response = protocol:pack_response(status_res, {Handle, 0, 0, 1, 1}),
+                                      gen_tcp:send(Socket, Response) ;
+
+                            _Other ->
+                                error_logger:info_msg("found, not running ~p",[Handle]),
+                                Response = protocol:pack_response(status_res, {Handle, 1, 0, 1, 1}),
                                 gen_tcp:send(Socket, Response)
-            end
+                        end ;
+        _WorkerProxy -> error_logger:info_msg("found, running ~p",[Handle]),
+                        Response = protocol:pack_response(status_res, {Handle, 1, 1, 1, 1}),
+                        gen_tcp:send(Socket, Response)
     end,
     {reply, ok, State} ;
 
-handle_call({send, Data}, _From, [Background, Socket, JobHandle] = State) ->
-    log:debug(["client proxy sending data for job", JobHandle, " background ", Background]),
-    case Background =:= false of
-         true -> Res = gen_tcp:send(Socket, Data),
-                 {reply, Res, State} ;
-        false -> {reply, ok, State}
-    end ;
+handle_call({send, Data}, _From, [Identifier, Socket, _Options] = State) ->
+    log:debug(["client proxy sending data from proxy", Identifier]),
+    Res = gen_tcp:send(Socket, Data),
+    {reply, Res, State} ;
+
+handle_call({forward_exception, ExceptionResponse}, _From, [_Identifier, Socket, Options] = State) ->
+    ForwardExceptionsP = lists:member(<<"exceptions">>, Options),
+    if ForwardExceptionsP =:= true ->
+            gen_tcp:send(Socket, ExceptionResponse) ;
+       true -> dont_care
+    end,
+    {reply, ok, State} ;
 
 handle_call(stop, _From, State) ->
     {stop, normal, stopped, State} .
@@ -104,9 +123,33 @@ terminate(shutdown, _State) ->
 
 %% private API
 
+%% doc
+%% Common logic for dispatching background jobs of different priority level
+process_job_bg(Level, FunctionName, Arguments, ClientProxyId, ClientSocket) ->
+    {ok, Handle} = jobs_queue_server:submit_job_from_client_proxy(ClientProxyId, true, FunctionName, Arguments, Level),
+    Response = protocol:pack_response(job_created, {Handle}),
+    error_logger:info_msg("wp sending job bg created ~p",[FunctionName]),
+    gen_tcp:send(ClientSocket, Response),
+    WorkerProxies = functions_registry:workers_for_function(FunctionName),
+    lists:foreach(fun(WorkerProxy) ->
+                          spawn(fun() -> worker_proxy:cast_gearman_message(WorkerProxy, noop, []) end)
+                  end,
+                  WorkerProxies)  .
+
+%% doc
+%% Common logic for dispatching jobs of different priority level
+process_job(Level, FunctionName, Arguments, ClientProxyId, ClientSocket) ->
+    {ok, Handle} = jobs_queue_server:submit_job_from_client_proxy(ClientProxyId, false, FunctionName, Arguments, Level),
+    Response = protocol:pack_response(job_created, {Handle}),
+    gen_tcp:send(ClientSocket, Response),
+    WorkerProxies = functions_registry:workers_for_function(FunctionName),
+    lists:foreach(fun(WorkerProxy) ->
+                          spawn(fun() -> worker_proxy:cast_gearman_message(WorkerProxy, noop, []) end)
+                  end,
+                  WorkerProxies)  .
+
 
 client_process_connection(ProxyIdentifier, ClientSocket) ->
-    log:debug(["client_proxy client_process_connection", ProxyIdentifier]),
     Read = connections:do_recv(ClientSocket),
     case Read of
 
@@ -128,6 +171,28 @@ client_process_connection(ProxyIdentifier, ClientSocket) ->
 
                                               {get_status, Handle} ->
                                                   client_proxy:gearman_message(ProxyIdentifier, get_status, [Handle]);
+
+                                              {echo_req, Opaque} ->
+                                                  log:debug("connections process_connection : echo_req"),
+                                                  gen_tcp:send(ClientSocket, protocol:pack_response(echo_res, {Opaque})) ;
+
+                                              {submit_job, [FunctionName | Arguments]} ->
+                                                  process_job(normal, FunctionName, Arguments, ProxyIdentifier, ClientSocket) ;
+
+                                              {submit_job_high, [FunctionName | Arguments]} ->
+                                                  process_job(high, FunctionName, Arguments, ProxyIdentifier, ClientSocket) ;
+
+                                              {submit_job_low, [FunctionName | Arguments]} ->
+                                                  process_job(low, FunctionName, Arguments, ProxyIdentifier, ClientSocket) ;
+
+                                              {submit_job_bg, [FunctionName | Arguments]} ->
+                                                  process_job_bg(normal, FunctionName, Arguments, ProxyIdentifier, ClientSocket);
+
+                                              {submit_job_high_bg, [FunctionName | Arguments]} ->
+                                                  process_job_bg(high, FunctionName, Arguments, ProxyIdentifier, ClientSocket);
+
+                                              {submit_job_low_bg, [FunctionName | Arguments]} ->
+                                                  process_job_bg(low, FunctionName, Arguments, ProxyIdentifier, ClientSocket) ;
 
                                               Other ->
                                                   log:info(["client_proxy client_process_connection : unknown message",Other])

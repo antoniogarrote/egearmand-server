@@ -1,8 +1,11 @@
 === version 0.6.6 (01/12/2009)
 
+- missing protocol messages
 - administrative connections remain open
 - proper cleanup of workers after disconnection
 - implemented missing status_req/status_res commands
+- tested using gearman C version 0.11 examples
+- multiple jobs assigned to a single client proxy fixes
 
 === version 0.6.5 (18/10/2009)
 

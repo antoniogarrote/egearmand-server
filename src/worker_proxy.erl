@@ -93,7 +93,7 @@ handle_call({reset_abilities, []}, _From, #worker_proxy_state{functions = Functi
     lists:foreach(fun(F) -> disable_function(Identifier,F) end, Functions),
     {reply, ok, State#worker_proxy_state{ functions = [] }} ;
 
-handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, socket = WorkerSocket} = State) ->
+handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, socket = WorkerSocket, identifier = ProxyIdentifier} = State) ->
     log:debug(["looking for job for", Functions]) ,
     Job = check_queues_for(Functions),
     log:debug(["Found jobs for worker :",Job]),
@@ -106,7 +106,25 @@ handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, 
         #job_request{identifier = Identifier, function = FunctionName, opaque_data = Opaque} ->
             Request = protocol:pack_response(job_assign, {Identifier, FunctionName, Opaque}),
             gen_tcp:send(WorkerSocket,Request),
-            log:debug(["About to set the current job for worker proxy", Identifier, Job]),
+            log:debug(["About to set the current job for worker proxy", ProxyIdentifier, Job]),
+            workers_registry:update_worker_current(ProxyIdentifier, Job),
+            {reply, ok, State#worker_proxy_state{current = Job}}
+    end ;
+
+handle_call({grab_job_uniq, none}, _From, #worker_proxy_state{functions = Functions, socket = WorkerSocket} = State) ->
+    log:debug(["looking for uniq job for", Functions]) ,
+    Job = check_queues_for(Functions),
+    log:debug(["Found jobs for worker :",Job]),
+    case Job of
+        not_found ->
+            Response = protocol:pack_response(no_job, {}),
+            gen_tcp:send(WorkerSocket,Response),
+            {reply, ok, State} ;
+
+        #job_request{identifier = Identifier, function = FunctionName, opaque_data = Opaque} ->
+            Request = protocol:pack_response(job_assign_uniq, {Identifier, FunctionName, Opaque}),
+            gen_tcp:send(WorkerSocket,Request),
+            log:debug(["About to set the current uniq job for worker proxy", Identifier, Job]),
             workers_registry:update_worker_current(Identifier, Job),
             {reply, ok, State#worker_proxy_state{current = Job}}
     end ;
@@ -143,15 +161,16 @@ handle_call({worker_disconnection, _Error}, _From, State) ->
 
 handle_call({work_status, [JobIdentifier, Numerator,Denominator]}, _From, #worker_proxy_state{ current = Job } = State) ->
     UpdatedJob = Job#job_request{ status = { Numerator, Denominator } },
-    if UpdatedJob#job_request.client_socket_id =/= no_socket ->
+    if UpdatedJob#job_request.background =:= false ->
             Response = protocol:pack_response(work_status, {JobIdentifier, Numerator, Denominator}),
-            client_proxy:send(Job#job_request.client_socket_id, Response)
+            client_proxy:send(Job#job_request.client_socket_id, Response) ;
+       true -> dont_care
     end,
     {reply, ok, State#worker_proxy_state{ current = UpdatedJob } } ;
 
 handle_call({work_data, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_state{ current = Job } = State) ->
     if
-        Job#job_request.client_socket_id =/= no_socket ->
+        Job#job_request.background =:= false ->
             Response = protocol:pack_response(work_data, {JobIdentifier, OpaqueData}),
             client_proxy:send(Job#job_request.client_socket_id, Response) ;
         true -> dont_care
@@ -160,7 +179,7 @@ handle_call({work_data, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_state
 
 handle_call({work_warning, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_state{ current = Job } = State) ->
     if
-        Job#job_request.client_socket_id =/= no_socket ->
+        Job#job_request.background =:= false ->
             Response = protocol:pack_response(work_warning, {JobIdentifier, OpaqueData}),
             client_proxy:send(Job#job_request.client_socket_id, Response) ;
         true -> dont_care
@@ -169,11 +188,9 @@ handle_call({work_warning, [JobIdentifier, OpaqueData]}, _From, #worker_proxy_st
 
 handle_call({work_exception, [JobIdentifier, Reason]}, _From, #worker_proxy_state{ identifier = Identifier, current = Job } = State) ->
     workers_registry:update_worker_current(Identifier, none),
-    ExceptionsEnabled = jobs_queue_server:check_option_for_job(<<"exceptions">>, Job),
-    if
-        (Job#job_request.client_socket_id =/= no_socket) and ExceptionsEnabled ->
+    if Job#job_request.background =:= false ->
             Response = protocol:pack_response(work_exception, {JobIdentifier, Reason}),
-            client_proxy:send(Job#job_request.client_socket_id, Response) ;
+            client_proxy:forward_exception(Job#job_request.client_socket_id, Response) ;
         true -> dont_care
     end,
     {reply, ok, State} ;
@@ -181,7 +198,7 @@ handle_call({work_exception, [JobIdentifier, Reason]}, _From, #worker_proxy_stat
 handle_call({work_fail, [JobIdentifier]}, _From, #worker_proxy_state{ identifier = Identifier, current = Job } = State) ->
     workers_registry:update_worker_current(Identifier, none),
     if
-        Job#job_request.client_socket_id =/= no_socket ->
+        Job#job_request.background =:= false ->
             Response = protocol:pack_response(work_fail, {JobIdentifier}),
             client_proxy:send(Job#job_request.client_socket_id, Response) ;
         true -> dont_care
@@ -192,7 +209,7 @@ handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state
     log:debug(["About to set the current job to none due to work complete", Identifier, Job]),
     workers_registry:update_worker_current(Identifier, none),
     if
-        Job#job_request.client_socket_id =/= no_socket ->
+        Job#job_request.background =:= false ->
             Response = protocol:pack_response(work_complete, {JobIdentifier, Result}),
             client_proxy:send(Job#job_request.client_socket_id, Response) ;
         true -> dont_care
@@ -297,8 +314,14 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
                     lists:foreach(fun(Msg) ->
                                           case Msg of
 
+                                              {pre_sleep, none} ->
+                                                  none;
+
                                               {grab_job, FunctionName} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, grab_job, FunctionName);
+
+                                              {grab_job_uniq, FunctionName} ->
+                                                  worker_proxy:gearman_message(ProxyIdentifier, grab_job_uniq, FunctionName);
 
                                               {can_do, FunctionName} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, can_do, FunctionName);
@@ -313,7 +336,7 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_data, [JobIdentifier, OpaqueData]);
 
                                               {work_warning, [JobIdentifier, OpaqueData]} ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, work_exception, [JobIdentifier, OpaqueData]);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_warning, [JobIdentifier, OpaqueData]);
 
                                               {work_status, [JobIdentifier, Numerator, Denominator]} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_status, [JobIdentifier, Numerator, Denominator]) ;
@@ -323,6 +346,10 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
 
                                               {work_fail, JobIdentifier} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_fail, [JobIdentifier]);
+
+                                              {echo_req, Opaque} ->
+                                                  log:debug("connections process_connection : echo_req"),
+                                                  gen_tcp:send(WorkerSocket, protocol:pack_response(echo_res, {Opaque})) ;
 
                                               reset_abilities ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, reset_abilities, []);
@@ -356,7 +383,6 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
 check_queues_for([]) ->
     not_found ;
 check_queues_for([F | Fs]) ->
-    log:debug(["worker_proxy check_queues_for:", F]),
     Found = jobs_queue_server:lookup_job(F),
     case Found of
         {ok, not_found} -> check_queues_for(Fs) ;
