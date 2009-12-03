@@ -22,21 +22,20 @@
 %% @doc
 %% Creates the worker proxy from a given worker identifier and worker socket.
 start_link(Id, WorkerSocket) ->
-    log:debug(["worker_proxy start_link: ",Id]),
+    log:info(["worker_proxy start_link: ",Id]),
     gen_server:start_link({global, Id}, worker_proxy, #worker_proxy_state{ identifier = Id , socket = WorkerSocket }, []) .
 
 
 %% @doc
 %% Redirects a Gearman protocol message to the worker proxy.
 gearman_message(WorkerProxy,Msg,Arguments) ->
-    log:debug(["worker_proxy gearman_message: ",WorkerProxy, Msg, Arguments]),
     gen_server:call({global, WorkerProxy}, {Msg, Arguments}) .
 
 
 %% @doc
 %% Reports an error inthe worker connection to the worker proxy.
 error_in_worker(WorkerProxy, Error) ->
-    log:debug(["worker_proxy error_in_worker: ",WorkerProxy, error, Error]),
+    log:error(["worker_proxy error_in_worker: ",WorkerProxy, error, Error]),
     gen_server:call({global, WorkerProxy}, {error_in_worker, Error}) .
     %TODO kill the proxy
 
@@ -45,13 +44,12 @@ error_in_worker(WorkerProxy, Error) ->
 %% Terminates the execution of the worker proxy unregistering the worker
 %% from the worker and functions registries.
 worker_disconnection(WorkerProxy, Error) ->
-    log:debug(["worker_proxy disconnecting: ",WorkerProxy, error, Error]),
+    log:info(["worker_proxy disconnecting: ",WorkerProxy, error, Error]),
     gen_server:call({global, WorkerProxy}, {worker_disconnection, Error}) .
 
 %% @doc
 %% Redirects a Gearman protocol message to the worker proxy.
 cast_gearman_message(WorkerProxy,Msg,Arguments) ->
-    log:debug(["worker_proxy cast_gearman_message: ",WorkerProxy, Msg]),
     gen_server:cast({global, WorkerProxy}, {Msg, Arguments}) .
 
 
@@ -76,7 +74,7 @@ handle_call({can_do, FunctionName}, _From, #worker_proxy_state{functions = Funct
     {Outcome, FunctionsP} = update_functions(FunctionName, Functions),
     case Outcome of
         not_in_list -> enable_function(Identifier,FunctionName),
-                       log:debug([Identifier, "Adding workers_registry info for function ", FunctionName]),
+                       log:info(["worker_proxy : can_do : ", Identifier, " Adding workers_registry info for function ", FunctionName]),
                        workers_registry:add_worker_function(Identifier, FunctionName)
     end,
     {reply, ok, State#worker_proxy_state{functions = FunctionsP}} ;
@@ -85,6 +83,7 @@ handle_call({cant_do, FunctionName}, _From, #worker_proxy_state{functions = Func
     {Outcome, FunctionsP} = remove_function(FunctionName, Functions),
     case Outcome of
         removed_from_list -> disable_function(Identifier,FunctionName),
+                             log:info(["worker_proxy : cant_do : ", Identifier, " removing workers_registry info for function ", FunctionName]),
                              workers_registry:remove_worker_function(Identifier, FunctionName)
     end,
     {reply, ok, State#worker_proxy_state{functions = FunctionsP}} ;
@@ -94,9 +93,7 @@ handle_call({reset_abilities, []}, _From, #worker_proxy_state{functions = Functi
     {reply, ok, State#worker_proxy_state{ functions = [] }} ;
 
 handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, socket = WorkerSocket, identifier = ProxyIdentifier} = State) ->
-    log:debug(["looking for job for", Functions]) ,
     Job = check_queues_for(Functions),
-    log:debug(["Found jobs for worker :",Job]),
     case Job of
         not_found ->
             Response = protocol:pack_response(no_job, {}),
@@ -106,25 +103,21 @@ handle_call({grab_job, none}, _From, #worker_proxy_state{functions = Functions, 
         #job_request{identifier = Identifier, function = FunctionName, opaque_data = Opaque} ->
             Request = protocol:pack_response(job_assign, {Identifier, FunctionName, Opaque}),
             gen_tcp:send(WorkerSocket,Request),
-            log:debug(["About to set the current job for worker proxy", ProxyIdentifier, Job]),
             workers_registry:update_worker_current(ProxyIdentifier, Job),
             {reply, ok, State#worker_proxy_state{current = Job}}
     end ;
 
 handle_call({grab_job_uniq, none}, _From, #worker_proxy_state{functions = Functions, socket = WorkerSocket} = State) ->
-    log:debug(["looking for uniq job for", Functions]) ,
     Job = check_queues_for(Functions),
-    log:debug(["Found jobs for worker :",Job]),
     case Job of
         not_found ->
             Response = protocol:pack_response(no_job, {}),
             gen_tcp:send(WorkerSocket,Response),
             {reply, ok, State} ;
 
-        #job_request{identifier = Identifier, function = FunctionName, opaque_data = Opaque} ->
-            Request = protocol:pack_response(job_assign_uniq, {Identifier, FunctionName, Opaque}),
+        #job_request{identifier = Identifier, function = FunctionName, opaque_data = Opaque, unique_id = Unique} ->
+            Request = protocol:pack_response(job_assign_uniq, {Identifier, FunctionName, Unique, Opaque}),
             gen_tcp:send(WorkerSocket,Request),
-            log:debug(["About to set the current uniq job for worker proxy", Identifier, Job]),
             workers_registry:update_worker_current(Identifier, Job),
             {reply, ok, State#worker_proxy_state{current = Job}}
     end ;
@@ -142,7 +135,7 @@ handle_call({error_in_worker, [_Error]}, _From, State) ->
 
 handle_call({worker_disconnection, _Error}, _From, State) ->
     % Should we reeschedule the current task?
-    log:debug(["worker disconnection checking on_worker_failure"]),
+    log:info(["worker_proxy : worker_disconnection"]),
     case configuration:on_worker_failure() of
         reeschedule -> case State#worker_proxy_state.current =/= none of
                            true  -> jobs_queue_server:reeschedule_job(State#worker_proxy_state.current) ;
@@ -151,11 +144,9 @@ handle_call({worker_disconnection, _Error}, _From, State) ->
         none        -> notify_error(State)
     end,
     % Unregistering functions
-    log:debug(["worker disconnection unregistering functions multi"]),
      functions_registry:unregister_from_function_multi(State#worker_proxy_state.identifier,
                                                        State#worker_proxy_state.functions),
     % Removing worker_proxy info
-    log:debug(["worker disconnection unregistering proxy"]),
     workers_registry:unregister_worker_proxy(State#worker_proxy_state.identifier),
     {stop, normal, exit, State} ;
 
@@ -206,10 +197,11 @@ handle_call({work_fail, [JobIdentifier]}, _From, #worker_proxy_state{ identifier
     {reply, ok, State#worker_proxy_state{ current = none }} ;
 
 handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state{ identifier = Identifier, current = Job } = State) ->
-    log:debug(["About to set the current job to none due to work complete", Identifier, Job]),
+    %log:debug(["About to set the current job to none due to work complete", Identifier, Job]),
     workers_registry:update_worker_current(Identifier, none),
     if
         Job#job_request.background =:= false ->
+            %error_logger:info_msg("SENDING WORK COMPLETE CAUSE NO BACKGROUND: ~p",[Job]),
             Response = protocol:pack_response(work_complete, {JobIdentifier, Result}),
             client_proxy:send(Job#job_request.client_socket_id, Response) ;
         true -> dont_care
@@ -218,11 +210,11 @@ handle_call({work_complete, [JobIdentifier, Result]}, _From, #worker_proxy_state
 
 
 handle_cast({noop, []}, #worker_proxy_state{ socket = WorkerSocket } = State) ->
-    log:debug(["Sending NOOP at",State]),
+    %log:debug(["Sending NOOP at",State]),
     Request = protocol:pack_response(noop,{}),
-    log:debug(["NOOP Packaged as",binary_to_list(Request)]),
+    %log:debug(["NOOP Packaged as",binary_to_list(Request)]),
     gen_tcp:send(WorkerSocket, Request),
-    log:debug(["NOOP Sent"]),
+    %log:debug(["NOOP Sent"]),
     {noreply, State} .
 
 
@@ -231,11 +223,11 @@ handle_info(_Msg, State) ->
 
 
 terminate(normal, #worker_proxy_state{identifier = Identifier}) ->
-    log:debug(["About to terminate with normal state", Identifier]),
+    log:info(["worker_proxy : terminate : About to terminate with normal state ", Identifier]),
     ok ;
 terminate(shutdown, #worker_proxy_state{identifier = Identifier, socket = WorkerSocket}) ->
     gen_tcp:close(WorkerSocket),
-    log:debug(["About to shutdown worker proxy connection", Identifier]),
+    log:info(["worker_proxy : terminate : About to shutdown worker proxy connection ", Identifier]),
     workers_registry:unregister_worker_proxy(Identifier),
     ok.
 
@@ -291,10 +283,9 @@ do_remove_function(FunctionName, [Other | Rest], Acum) ->
 worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
     if
         ShouldRegister =:= true ->
-            log:debug(["worker_proxy worker_process_connection", ProxyIdentifier]),
+            %log:debug(["worker_proxy worker_process_connection", ProxyIdentifier]),
             {ok, {IP, _Port}} = inet:peername(WorkerSocket),
-            workers_registry:register_worker_proxy(#worker_proxy_info{identifier = ProxyIdentifier, current = none, ip = IP}),
-            log:debug(["worker_proxy registered", ProxyIdentifier]) ;
+            workers_registry:register_worker_proxy(#worker_proxy_info{identifier = ProxyIdentifier, current = none, ip = IP}) ;
         true -> none
     end,
 
@@ -306,10 +297,10 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
             Msgs = protocol:process_request(Bin, []),
             case Msgs of
                 {error, _DonCare} ->
-                    log:error(["worker_proxy worker_proxy_connection : Error reading from worker proxy socket", Msgs]),
+                    %log:error(["worker_proxy worker_proxy_connection : Error reading from worker proxy socket", Msgs]),
                     worker_process_connection(ProxyIdentifier, WorkerSocket, false) ;
                 Msgs ->
-                    % TODO: instead of foreach is better to use some recursion that can
+                    % @todo: instead of foreach is better to use some recursion that can
                     %        be stopped when an error has been found.
                     lists:foreach(fun(Msg) ->
                                           case Msg of
@@ -318,25 +309,25 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
                                                   none;
 
                                               {grab_job, FunctionName} ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, grab_job, FunctionName);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, grab_job, FunctionName) ;
 
                                               {grab_job_uniq, FunctionName} ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, grab_job_uniq, FunctionName);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, grab_job_uniq, FunctionName) ;
 
                                               {can_do, FunctionName} ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, can_do, FunctionName);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, can_do, FunctionName) ;
 
                                               {cant_do, FunctionName} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, cant_do, FunctionName) ;
 
                                               {work_complete, [JobIdentifier, Response]} ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, work_complete, [JobIdentifier, Response]);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_complete, [JobIdentifier, Response]) ;
 
                                               {work_data, [JobIdentifier, OpaqueData]} ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, work_data, [JobIdentifier, OpaqueData]);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_data, [JobIdentifier, OpaqueData]) ;
 
                                               {work_warning, [JobIdentifier, OpaqueData]} ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, work_warning, [JobIdentifier, OpaqueData]);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_warning, [JobIdentifier, OpaqueData]) ;
 
                                               {work_status, [JobIdentifier, Numerator, Denominator]} ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_status, [JobIdentifier, Numerator, Denominator]) ;
@@ -345,17 +336,16 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
                                                   worker_proxy:gearman_message(ProxyIdentifier, work_exception, [JobIdentifier, Reason]) ;
 
                                               {work_fail, JobIdentifier} ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, work_fail, [JobIdentifier]);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, work_fail, [JobIdentifier]) ;
 
                                               {echo_req, Opaque} ->
-                                                  log:debug("connections process_connection : echo_req"),
                                                   gen_tcp:send(WorkerSocket, protocol:pack_response(echo_res, {Opaque})) ;
 
                                               reset_abilities ->
-                                                  worker_proxy:gearman_message(ProxyIdentifier, reset_abilities, []);
+                                                  worker_proxy:gearman_message(ProxyIdentifier, reset_abilities, []) ;
 
                                               Other ->
-                                                  log:info(["worker_proxy worker_proxy_connection: unknown message",Other])
+                                                  log:error(["worker_proxy : worker_proxy_connection : unknown message",Other])
                                           end
                                   end,
                                   Msgs),
@@ -375,9 +365,8 @@ worker_process_connection(ProxyIdentifier, WorkerSocket, ShouldRegister) ->
 
             % log for now
             % @todo Notify to proxy, empty queues and finish execution of the server
-            log:error(["worker_proxy worker_proxy_connection : Error in worker proxy, about to notify", Error]),
-            worker_proxy:worker_disconnection(ProxyIdentifier, Error),
-            log:error(["worker_proxy worker_proxy_connection : Error in worker proxy notified!"])
+            log:error(["worker_proxy : worker_proxy_connection : Error in worker proxy, about to notify", Error]),
+            worker_proxy:worker_disconnection(ProxyIdentifier, Error)
     end .
 
 check_queues_for([]) ->
