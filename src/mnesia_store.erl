@@ -86,24 +86,19 @@ dirty_find(Key, TableName) ->
 %% updates the one element in the store selecte by Key, using the provided
 %% predicate P
 update(P, Key, TableName) ->
-    log:info(["mnesia_store update",TableName]),
     F = fun() ->
                 case mnesia:read({TableName, Key}) of
-                    []     -> log:info(["VOY A TENER UN PROBLEMA... ",Key, TableName]),
-                              not_found;
-                    [Found] -> log:info(["SERA OTRA COSA... ", Key, TableName]),
-                               mnesia:write(P(Found))
+                    []      -> not_found;
+                    [Found] -> mnesia:write(P(Found))
                 end
         end,
     {atomic, Result} = mnesia:transaction(F),
-    log:info(["mnesia_store updated!",TableName]),
     Result.
 
 
 %% @doc
 %% Inserts a new value in one of the queues identified by Key.
 insert(Value, TableName) ->
-    log:info(["mnesia inserting",Value, TableName]),
     mnesia:transaction(fun() -> mnesia:write( Value ) end),
     TableName .
 
@@ -128,14 +123,12 @@ dequeue(PKey, TableName) ->
 %% @doc
 %% Deletes the object with the given key from the table.
 delete(Key, TableName) ->
-    log:info(["mnesia_store delete",TableName]),
     mnesia:transaction(fun() -> mnesia:delete({ TableName, Key}) end) .
 
 
 %% @doc
 %% Deletes the object with the given key from the table.
 delete_multi(Keys, TableName) ->
-    log:info(["mnesia_store delete mutli",TableName]),
     mnesia:transaction(fun() ->
                                lists:foreach(fun(K) ->
                                                      mnesia:delete({ TableName, K})
@@ -147,7 +140,6 @@ delete_multi(Keys, TableName) ->
 %% @doc
 %% retrieves all the elements for a key
 all(TableName) ->
-    log:info(["mnesia_store all",TableName]),
     {atomic, Res} = mnesia:transaction(fun() -> qlc:eval( qlc:q([X || X <- mnesia:table(TableName)]) ) end),
     Res .
 
@@ -155,7 +147,6 @@ all(TableName) ->
 %% @doc
 %% retrieves all the elements for a key
 all(P,TableName) ->
-    log:info(["mnesia_store all",TableName]),
     {atomic, Res} = mnesia:transaction(fun() -> qlc:eval( qlc:q([X || X <- mnesia:table(TableName), P(X)])) end),
     Res .
 

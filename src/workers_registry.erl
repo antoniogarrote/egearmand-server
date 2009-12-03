@@ -26,7 +26,7 @@ start_link() ->
 %% @doc
 %% Register a worker proxy associated to the function FunctionName.
 register_worker_proxy(WorkerProxyInfo) ->
-    log:debug(["workers_registry : registering worker", WorkerProxyInfo]),
+    %log:debug(["workers_registry : registering worker", WorkerProxyInfo]),
     gen_server:call({global,workers_registry},{register, WorkerProxyInfo}) .
 
 
@@ -55,7 +55,7 @@ update_worker_id(ProxyIdentifier, Id) ->
 %% @doc
 %% Adds an additional function to the supported functions of a workers.
 add_worker_function(ProxyIdentifier, Function) ->
-    log:debug(["workers_registry add_worker_function", ProxyIdentifier, Function]),
+    %log:debug(["workers_registry add_worker_function", ProxyIdentifier, Function]),
     gen_server:cast({global,workers_registry},{add_worker_function, ProxyIdentifier, Function}) .
 
 
@@ -94,7 +94,6 @@ handle_call({unregister, ProxyIdentifier}, _From, _Store) ->
 handle_call({check_worker_for_job, JobHandle}, _From, St) ->
     WorkerProxies = mnesia_store:all(fun(State) ->
                                              Current = State#worker_proxy_info.current,
-                                             log:debug(["CHECK WORKER vs ->",JobHandle, State#worker_proxy_info.current]),
                                              case Current of
                                                  #job_request{ identifier = JobHandle } ->
                                                      true ;
@@ -116,23 +115,23 @@ handle_call({worker_functions}, _From, Store) ->
 
 
 handle_call({check_handle_for_worker, Handle}, _From, Store) ->
-    mnesia_store:all(fun(S) ->
-                             log:debug(["Comparing with ", S#job_request.identifier, S#job_request.unique_id]),
-                             (S#job_request.identifier =:= Handle) or (S#job_request.unique_id =:= Handle)
-                     end,
-                     job_request) .
+    Res = mnesia_store:all(fun(S) ->
+                                   %log:debug(["Comparing with ", S#job_request.identifier, S#job_request.unique_id]),
+                                   (S#job_request.identifier =:= Handle) or (S#job_request.unique_id =:= Handle)
+                           end,
+                           job_request),
+    {reply, Res, Store} .
 
 handle_cast({update_current, ProxyIdentifier, Current}, State) ->
-    log:debug(["Updating current :",ProxyIdentifier, Current]),
+    %log:debug(["Updating current :",ProxyIdentifier, Current]),
     mnesia_store:update(fun(OldState) -> OldState#worker_proxy_info{ current = Current } end,
                         ProxyIdentifier,
                         worker_proxy_info),
-%    {reply, ok, State} .
     {noreply, State} ;
 
 
 handle_cast({update_worker_id, ProxyIdentifier, Id}, State) ->
-    log:debug([ProxyIdentifier, "Updating worker ID", Id]),
+    %log:debug([ProxyIdentifier, "Updating worker ID", Id]),
     mnesia_store:update(fun(OldState) -> OldState#worker_proxy_info{ worker_id = Id } end,
                         ProxyIdentifier,
                         worker_proxy_info),

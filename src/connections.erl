@@ -88,7 +88,6 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
     case ClientConnectionResult of
 
         {ok, ClientSocket} ->
-            log:error(["server_socket_process receiving client socket"]),
             %spawn(connections, server_socket_process, [ServerSocket, ConnectionsServer]),
             %process_connection(ClientSocket) ;
             spawn(connections, process_connection, [ClientSocket]) ,
@@ -106,17 +105,13 @@ server_socket_process(ServerSocket,ConnectionsServer) ->
 -spec(process_connection(gen_tcp:socket()) -> undefined) .
 
 process_connection(ClientSocket) ->
-    log:debug(["connections process_connection : about to process connection"]),
     {ok, Bin} = do_recv(ClientSocket),
-    log:debug(["connections process_connection : Received from client ",Bin]),
     % this thread will process the request and notify us with the message
     Msgs = protocol:process_request(Bin, []),
-    log:debug(["connections process_connection : msgs in queue ",Msgs]),
     lists:foreach(fun(Msg) ->
                           case check_extensions(Msg) of
                               %% No extension registered, just follow common gearman flow
                               {error, not_found} ->
-                                  log:debug(["connections process_connection : No extension for", Msg]),
                                   process_connection(Msg, ClientSocket) ;
                               %% There is an extension registered for this message.
                               %% We pass the control to the extension
@@ -140,33 +135,27 @@ process_connection(Msg, ClientSocket) ->
             none;
 
         {set_client_id, []} ->
-            log:debug(["connections process_connection : set_client_id",[]]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, set_client_id, none) ;
 
         {set_client_id, Identifier} ->
-            log:debug(["connections process_connection : set_client_id",Identifier]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, set_client_id, Identifier) ;
 
         {can_do, FunctionName} ->
-            log:debug(["connections process_connection : can_do",FunctionName]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, can_do, FunctionName) ;
 
         {grab_job, none} ->
-            log:debug(["connections process_connection : grab_job"]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, grab_job, none) ;
 
         {grab_job_uniq, none} ->
-            log:debug(["connections process_connection : grab_job_uniq"]),
             check_worker_proxy_for(NewIdentifier, ClientSocket),
             worker_proxy:gearman_message(NewIdentifier, grab_job_uniq, none) ;
 
 
         {echo_req, Opaque} ->
-            log:debug("connections process_connection : echo_req"),
             gen_tcp:send(ClientSocket, protocol:pack_response(echo_res, {Opaque})),
             process_connection(ClientSocket);
 
@@ -214,7 +203,7 @@ process_connection(Msg, ClientSocket) ->
             application:stop(egearmand) ;
 
         Other ->
-            log:debug(["connections process_connection : unknown",Other])
+            log:error(["connections process_connection : unknown",Other])
     end  .
 
 
@@ -250,7 +239,6 @@ process_job(Level, FunctionName, Arguments, ClientSocket) ->
 do_recv(Sock, Bs) ->
     case gen_tcp:recv(Sock, 0) of
         {ok, B} ->
-            log:debug(["read something more", B]),
             do_recv(Sock, [Bs | B]);
         {error, closed} ->
             {ok, list_to_binary(Bs)}
@@ -271,12 +259,11 @@ do_recv(Sock, Bs) ->
 do_recv(Sock) ->
     case gen_tcp:recv(Sock, 0) of
         {ok, B} ->
-            log:debug(["read something", B]),
             {ok, B} ;
         {error, closed} ->
             {error, socket_closed} ;
         {error, Reason} ->
-            log:debug(["ERROR!!!", Reason]),
+            log:error(["connections do_recv: error reading from client socket ", Reason]),
             {error, socket_closed}
     end.
 

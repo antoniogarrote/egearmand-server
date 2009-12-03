@@ -48,7 +48,7 @@ submit_job(Background, FunctionName, [UniqueId, OpaqueData], ClientSocket, Level
 %% Creates a new job request for a certain FunctionName, and Level from a
 %% client connection established from ClientSocket.
 submit_job_from_client_proxy(ClientProxyId, Background, FunctionName, [UniqueId, OpaqueData], Level) ->
-    Identifier = lists:flatten(io_lib:format("job@~p:(~p)",[node(),make_ref()])),
+    Identifier = lists:flatten(io_lib:format("H:~p:~p",[node(),make_ref()])),
     JobRequest = #job_request{ identifier = Identifier,
                                function = FunctionName,
                                unique_id = UniqueId,
@@ -99,11 +99,9 @@ init(State) ->
 
 
 handle_call({submit_job, JobRequest, Level}, _From, _State) ->
-    log:info(["jobs_queue_server, submit job", JobRequest, Level]),
     {reply, {ok, JobRequest#job_request.identifier}, mnesia_store:insert(JobRequest#job_request{queue_key = {JobRequest#job_request.function, Level}}, job_request)} ;
 
 handle_call({update_options, JobHandle, Option}, _From, _State) ->
-    log:info(["jobs_queue_server, update_options", JobHandle]),
     Res =  mnesia_store:update(fun(#job_request{ options = Options } = Job) ->
                                        Job#job_request{ options = [Option | Options] }
                                end,

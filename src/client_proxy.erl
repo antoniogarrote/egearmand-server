@@ -20,21 +20,19 @@
 %% @doc
 %% Starts a new client for socket Socket and global identifier Identifier.
 start_link(Identifier, Socket) ->
-    log:debug(["client_proxy start_link",Identifier]),
+    log:debug(["client_proxy : start_link : ",Identifier]),
     gen_server:start_link({global, Identifier}, client_proxy, [Identifier,Socket, []], []) .
 
 
 %% @doc
 %% Sends data to the client socket with proxy identified globally by Identifier.
 send(Identifier,Data) ->
-    log:debug(["client_proxy send", Identifier, Data]),
     gen_server:call({global, Identifier}, {send, Data}) .
 
 
 %% @doc
 %% Sends data to the client socket with proxy identified globally by Identifier.
 forward_exception(Identifier, ExceptionResponse) ->
-    log:debug(["client_proxy forwarding exception", Identifier, ExceptionResponse]),
     gen_server:call({global, Identifier}, {forward_exception, ExceptionResponse}) .
 
 
@@ -43,12 +41,13 @@ forward_exception(Identifier, ExceptionResponse) ->
 %% Closes the socket associated to proxy Identifier and finishes the execution
 %% of the proxy.
 close(Identifier) ->
-    log:debug(["client_proxy close", Identifier]),
     gen_server:call({global, Identifier}, stop) .
 
 
+%% @doc
+%% Sends a generic Msg to the client proxy.
+%% The message will be processed in a gen_server handle_call function.
 gearman_message(ClientProxy,Msg,Arguments) ->
-    log:debug(["client_proxy gearman_message", ClientProxy, Msg, Arguments]),
     gen_server:call({global, ClientProxy}, {Msg, Arguments}) .
 
 
@@ -56,7 +55,6 @@ gearman_message(ClientProxy,Msg,Arguments) ->
 
 
 init([Identifier, Socket, Options]) ->
-    log:debug(["Starting client proxy ", Identifier]),
     spawn(client_proxy, client_process_connection, [Identifier, Socket]),
     {ok, [Identifier, Socket, Options]} .
 
@@ -69,31 +67,22 @@ handle_call({option_req, [Option]}, _From, [Identifier, Socket, Options]) ->
 
 
 handle_call({get_status, [Handle]}, _From, [_Identifier, Socket, _Options] = State) ->
-    log:debug(["Requesting state of task ", Handle]),
     case workers_registry:check_worker_for_job(Handle) of
-        false        -> Jobs = mnesia_store:all(fun(S) ->
-                                                        log:debug(["Comparing with ", S#job_request.identifier, S#job_request.unique_id]),
-                                                        (S#job_request.identifier =:= Handle) or (S#job_request.unique_id =:= Handle)
-                                                end,
-                                                job_request),
+        false        -> Jobs = workers_registry:check_handle_for_worker(Handle),
                         case Jobs of
-                            []     -> log:debug(["not found ", Handle]),
-                                      Response = protocol:pack_response(status_res, {Handle, 0, 0, 1, 1}),
+                            []     -> Response = protocol:pack_response(status_res, {Handle, 0, 0, 1, 1}),
                                       gen_tcp:send(Socket, Response) ;
 
                             _Other ->
-                                error_logger:info_msg("found, not running ~p",[Handle]),
                                 Response = protocol:pack_response(status_res, {Handle, 1, 0, 1, 1}),
                                 gen_tcp:send(Socket, Response)
                         end ;
-        _WorkerProxy -> error_logger:info_msg("found, running ~p",[Handle]),
-                        Response = protocol:pack_response(status_res, {Handle, 1, 1, 1, 1}),
+        _WorkerProxy -> Response = protocol:pack_response(status_res, {Handle, 1, 1, 1, 1}),
                         gen_tcp:send(Socket, Response)
     end,
     {reply, ok, State} ;
 
-handle_call({send, Data}, _From, [Identifier, Socket, _Options] = State) ->
-    log:debug(["client proxy sending data from proxy", Identifier]),
+handle_call({send, Data}, _From, [_Identifier, Socket, _Options] = State) ->
     Res = gen_tcp:send(Socket, Data),
     {reply, Res, State} ;
 
@@ -128,7 +117,6 @@ terminate(shutdown, _State) ->
 process_job_bg(Level, FunctionName, Arguments, ClientProxyId, ClientSocket) ->
     {ok, Handle} = jobs_queue_server:submit_job_from_client_proxy(ClientProxyId, true, FunctionName, Arguments, Level),
     Response = protocol:pack_response(job_created, {Handle}),
-    error_logger:info_msg("wp sending job bg created ~p",[FunctionName]),
     gen_tcp:send(ClientSocket, Response),
     WorkerProxies = functions_registry:workers_for_function(FunctionName),
     lists:foreach(fun(WorkerProxy) ->
@@ -173,8 +161,7 @@ client_process_connection(ProxyIdentifier, ClientSocket) ->
                                                   client_proxy:gearman_message(ProxyIdentifier, get_status, [Handle]);
 
                                               {echo_req, Opaque} ->
-                                                  log:debug("connections process_connection : echo_req"),
-                                                  gen_tcp:send(ClientSocket, protocol:pack_response(echo_res, {Opaque})) ;
+                                                     gen_tcp:send(ClientSocket, protocol:pack_response(echo_res, {Opaque})) ;
 
                                               {submit_job, [FunctionName | Arguments]} ->
                                                   process_job(normal, FunctionName, Arguments, ProxyIdentifier, ClientSocket) ;
@@ -195,7 +182,7 @@ client_process_connection(ProxyIdentifier, ClientSocket) ->
                                                   process_job_bg(low, FunctionName, Arguments, ProxyIdentifier, ClientSocket) ;
 
                                               Other ->
-                                                  log:info(["client_proxy client_process_connection : unknown message",Other])
+                                                  log:error(["client_proxy client_process_connection : unknown message",Other])
                                           end
                                   end,
                                   Msgs),

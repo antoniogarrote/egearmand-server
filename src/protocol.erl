@@ -80,8 +80,8 @@ parse_command(CommandID, Data) ->
             [Handle, Function, Argument] = split(Data, 0, 2),
             {job_assign, Handle, Function, Argument};
         31 ->
-            [Handle, Function, Argument] = split(Data, 0, 2),
-            {job_assign_uniq, Handle, Function, Argument};
+            [Handle, Function, UniqueId, Argument] = split(Data, 0, 2),
+            {job_assign_uniq, Handle, Function, UniqueId, Argument};
         24 -> all_yours;
         6 -> noop;
         10 -> no_job;
@@ -93,7 +93,7 @@ parse_command(CommandID, Data) ->
             {submit_job_high, Function, Unique, Argument};
         32 ->
             [Function, Unique, Argument] = split(Data, 0, 2),
-            {submit_job_high, Function, Unique, Argument};
+            {submit_job_high_bg, Function, Unique, Argument};
 
         33 ->
             [Function, Unique, Argument] = split(Data, 0, 2),
@@ -112,8 +112,8 @@ parse_command(CommandID, Data) ->
         27 -> {option_res, Data}; % Name of the option
         20 ->
             [Handle, Known, Running, Numerator, Denominator] = split(Data, 0, 4),
-            {status_res, Handle, Known, Running, list_to_integer(Numerator), list_to_integer(Denominator)} ;
-        Other -> log:debug(["UKNOWN COMMAND: ", Other]),
+            {status_res, Handle, list_to_integer(Known), list_to_integer(Running), list_to_integer(Numerator), list_to_integer(Denominator)} ;
+        Other -> log:error(["protocol : unknown message ", Other]),
                  noexisto:functionon(Other)
     end.
 
@@ -146,7 +146,7 @@ pack_command(pre_sleep, {}) -> {4, []};
 pack_command(grab_job, {}) -> {9, []};
 pack_command(grab_job_uniq, {}) -> {30, []};
 pack_command(job_assign, {Handle, Func, Arg}) -> {11, [Handle, Func, Arg]};
-pack_command(job_assign_uniq, {Handle, Func, Arg}) -> {31, [Handle, Func, Arg]};
+pack_command(job_assign_uniq, {Handle, Func, UniqueId, Arg}) -> {31, [Handle, Func, UniqueId, Arg]};
 pack_command(all_yours, {}) -> {24, []};
 pack_command(noop, {}) -> {6, []};
 pack_command(no_job, {}) -> {10, []};
@@ -160,7 +160,7 @@ pack_command(job_created, {Handle}) -> {8, [Handle]};
 pack_command(get_status, {Handle}) -> {15, [Handle]};
 pack_command(option_req, {Option}) -> {26, [Option]};
 pack_command(option_res, {Option}) -> {27, [Option]};
-pack_command(status_res, {Handle, Known, Running, Numerator, Denominator}) -> {20, [Handle, Known, Running, integer_to_list(Numerator), integer_to_list(Denominator)]}.
+pack_command(status_res, {Handle, Known, Running, Numerator, Denominator}) -> {20, [Handle, integer_to_list(Known), integer_to_list(Running), integer_to_list(Numerator), integer_to_list(Denominator)]}.
 
 
 %% Join a list of lists into a single list separated by Separator
